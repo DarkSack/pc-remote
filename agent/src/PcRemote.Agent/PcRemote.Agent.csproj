@@ -21,8 +21,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
+    <!-- All modules referenced so their DLLs copy to bin/ next to the exe. -->
     <ProjectReference Include="..\PcRemote.Modules.System\PcRemote.Modules.System.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.SystemInfo\PcRemote.Modules.SystemInfo.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Clipboard\PcRemote.Modules.Clipboard.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Applications\PcRemote.Modules.Applications.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Processes\PcRemote.Modules.Processes.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Windows\PcRemote.Modules.Windows.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Media\PcRemote.Modules.Media.csproj" />
   </ItemGroup>
 
   <ItemGroup>

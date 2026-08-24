@@ -6,39 +6,54 @@ namespace PcRemote.Core.Protocol;
 // WebSocket message envelope. See docs/PROTOCOL.md for full spec.
 // ══════════════════════════════════════════════════════════════════
 
-public enum MessageKind
+public static class MessageKinds
 {
-    Request,
-    Response,
-    Subscribe,
-    Stream,
-    Unsubscribe,
-    Event,
-    Ping,
-    Pong,
-    // Auth-bootstrap
-    PairInit,
-    PairConfirm,
-    Auth,
+    public const string Request        = "request";
+    public const string Response       = "response";
+    public const string Subscribe      = "subscribe";
+    public const string Stream         = "stream";
+    public const string Unsubscribe    = "unsubscribe";
+    public const string Event          = "event";
+    public const string Ping           = "ping";
+    public const string Pong           = "pong";
+    // Bootstrap
+    public const string PairInit       = "pair_init";
+    public const string PairConfirm    = "pair_confirm";
+    public const string PairResult     = "pair_result";
+    public const string AuthChallenge  = "auth_challenge";
+    public const string Auth           = "auth";
+    public const string AuthResult     = "auth_result";
 }
 
-public abstract record Message(
-    [property: JsonPropertyName("kind")] MessageKind Kind,
-    [property: JsonPropertyName("ts")]   long Ts);
+/// <summary>Discriminator used to peek the "kind" field before full deserialization.</summary>
+public sealed record MessageHeader(
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("id")]   string? Id,
+    [property: JsonPropertyName("ts")]   long?   Ts);
 
 public sealed record CommandRequest(
-    [property: JsonPropertyName("id")]      string Id,
-    [property: JsonPropertyName("domain")]  string Domain,
-    [property: JsonPropertyName("action")]  string Action,
-    [property: JsonPropertyName("params")]  System.Text.Json.JsonElement? Params,
-    long Ts) : Message(MessageKind.Request, Ts);
+    [property: JsonPropertyName("kind")]   string Kind,
+    [property: JsonPropertyName("id")]     string Id,
+    [property: JsonPropertyName("domain")] string Domain,
+    [property: JsonPropertyName("action")] string Action,
+    [property: JsonPropertyName("params")] System.Text.Json.JsonElement? Params,
+    [property: JsonPropertyName("ts")]     long Ts);
 
 public sealed record CommandResponse(
-    [property: JsonPropertyName("id")]        string Id,
-    [property: JsonPropertyName("success")]   bool Success,
-    [property: JsonPropertyName("data")]      object? Data,
-    [property: JsonPropertyName("error")]     ErrorInfo? Error,
-    long Ts) : Message(MessageKind.Response, Ts);
+    [property: JsonPropertyName("kind")]    string    Kind,
+    [property: JsonPropertyName("id")]      string    Id,
+    [property: JsonPropertyName("success")] bool      Success,
+    [property: JsonPropertyName("data")]    object?   Data,
+    [property: JsonPropertyName("error")]   ErrorInfo? Error,
+    [property: JsonPropertyName("ts")]      long      Ts)
+{
+    public static CommandResponse Ok(string id, object? data = null) =>
+        new(MessageKinds.Response, id, true, data, null, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+    public static CommandResponse Fail(string id, string code, string message, bool recoverable = false) =>
+        new(MessageKinds.Response, id, false, null, new ErrorInfo(code, message, recoverable),
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+}
 
 public sealed record ErrorInfo(
     [property: JsonPropertyName("code")]        string Code,
@@ -55,4 +70,39 @@ public static class ErrorCodes
     public const string Timeout           = "TIMEOUT";
     public const string InternalError     = "INTERNAL_ERROR";
     public const string RateLimited       = "RATE_LIMITED";
+    public const string PairingFailed     = "PAIRING_FAILED";
 }
+
+// ── Pairing / Auth messages ─────────────────────────────────────
+
+public sealed record PairInitMessage(
+    [property: JsonPropertyName("kind")] string Kind);
+
+public sealed record PairConfirmMessage(
+    [property: JsonPropertyName("kind")]       string Kind,
+    [property: JsonPropertyName("code")]       string Code,
+    [property: JsonPropertyName("deviceName")] string DeviceName,
+    [property: JsonPropertyName("publicKey")]  string PublicKey); // base64 Ed25519 (32 bytes)
+
+public sealed record PairResultMessage(
+    [property: JsonPropertyName("kind")]             string Kind,
+    [property: JsonPropertyName("success")]          bool Success,
+    [property: JsonPropertyName("deviceId")]         string? DeviceId,
+    [property: JsonPropertyName("agentPublicKey")]   string? AgentPublicKey,
+    [property: JsonPropertyName("certFingerprint")]  string? CertFingerprint,
+    [property: JsonPropertyName("error")]            ErrorInfo? Error);
+
+public sealed record AuthChallengeMessage(
+    [property: JsonPropertyName("kind")]  string Kind,
+    [property: JsonPropertyName("nonce")] string Nonce); // hex 32 bytes
+
+public sealed record AuthMessage(
+    [property: JsonPropertyName("kind")]       string Kind,
+    [property: JsonPropertyName("deviceId")]   string DeviceId,
+    [property: JsonPropertyName("signature")]  string Signature); // base64 Ed25519(nonce)
+
+public sealed record AuthResultMessage(
+    [property: JsonPropertyName("kind")]      string Kind,
+    [property: JsonPropertyName("success")]   bool Success,
+    [property: JsonPropertyName("sessionId")] string? SessionId,
+    [property: JsonPropertyName("error")]     ErrorInfo? Error);
