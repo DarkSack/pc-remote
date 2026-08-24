@@ -1,102 +1,75 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ConnectionManager, type ConnectionState } from "@/net/connection";
-import { deleteCredentials, loadCredentials } from "@/storage/secure";
+import { useConnection } from "@/stores/connection";
+import { deleteCredentials } from "@/storage/secure";
 import type { SystemInfo, SystemStats } from "@/net/protocol";
 import { colors, radius, spacing } from "@/ui/theme";
+import { confirmAsync, stateLabel } from "@/ui/utils";
 
 // ══════════════════════════════════════════════════════════════
-// Dashboard por dispositivo. Al montar:
-//   - Carga credenciales.
-//   - Construye ConnectionManager y conecta.
-//   - Cuando llega a `connected`, request system.info y subscribe systeminfo.stats.
-//   - Al desmontar, disconnect().
+// Dashboard: conexión (via store compartido) + stats en tiempo real
+// + info sistema + power controls + navegación a sub-pantallas.
 // ══════════════════════════════════════════════════════════════
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
 
-  const [state, setState] = useState<ConnectionState>("disconnected");
-  const [error, setError] = useState<string | null>(null);
+  const { state, error, agentName, manager, ensureConnected, disconnect } = useConnection();
   const [info,  setInfo]  = useState<SystemInfo | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [mgr,   setMgr]   = useState<ConnectionManager | null>(null);
   const [busy,  setBusy]  = useState(false);
-  const [agentName, setAgentName] = useState<string>("");
+  const statsSubRef = useRef<{ unsubscribe: () => void } | null>(null);
+
+  useEffect(() => { void ensureConnected(deviceId); }, [deviceId, ensureConnected]);
 
   useEffect(() => {
-    let manager: ConnectionManager | null = null;
-    let subHandle: { unsubscribe: () => void } | null = null;
-    let disposed = false;
-
+    if (state !== "connected" || !manager) return;
+    let cancelled = false;
     (async () => {
-      const creds = await loadCredentials(deviceId);
-      if (!creds || disposed) { setError("No credentials for this device"); return; }
-      setAgentName(creds.agentName);
-      manager = new ConnectionManager(creds);
-      manager.addListener({
-        onState: async (s, e) => {
-          setState(s);
-          setError(e ?? null);
-          if (s === "connected" && manager) {
-            try {
-              const i = await manager.request<SystemInfo>("system", "info");
-              setInfo(i);
-            } catch (err) { setError((err as Error).message); }
-            subHandle?.unsubscribe();
-            subHandle = manager.subscribe(
-              "systeminfo", "stats",
-              (data) => setStats(data as SystemStats),
-              { intervalMs: 1000 },
-            );
-          }
-        },
-      });
-      setMgr(manager);
-      manager.connect();
+      try {
+        const i = await manager.request<SystemInfo>("system", "info");
+        if (!cancelled) setInfo(i);
+      } catch { /* silent */ }
     })();
-
+    statsSubRef.current?.unsubscribe();
+    statsSubRef.current = manager.subscribe(
+      "systeminfo", "stats",
+      (d) => setStats(d as SystemStats),
+      { intervalMs: 1000 },
+    );
     return () => {
-      disposed = true;
-      subHandle?.unsubscribe();
-      manager?.disconnect();
+      cancelled = true;
+      statsSubRef.current?.unsubscribe();
+      statsSubRef.current = null;
     };
-  }, [deviceId]);
+  }, [state, manager]);
 
-  async function runDestructive(action: "shutdown" | "restart" | "lock" | "sleep" | "logoff") {
-    if (!mgr) return;
-    const labels: Record<string, string> = {
-      shutdown: "apagar", restart: "reiniciar", lock: "bloquear", sleep: "suspender", logoff: "cerrar sesión en",
-    };
-    const label = labels[action];
-    const isDestructive = action !== "lock";
-    if (isDestructive) {
-      const ok = await confirmAsync(`¿${label[0].toUpperCase() + label.slice(1)} el PC?`, `Esta acción es inmediata.`);
-      if (!ok) return;
-    }
-    try {
-      setBusy(true);
-      await mgr.request("system", action);
-    } catch (e) { Alert.alert("Error", (e as Error).message); }
+  async function runPower(action: "shutdown" | "restart" | "lock" | "sleep" | "logoff") {
+    if (!manager) return;
+    const label = { shutdown: "apagar", restart: "reiniciar", lock: "bloquear", sleep: "suspender", logoff: "cerrar sesión en" }[action];
+    if (action !== "lock" && !(await confirmAsync(`¿${cap(label)} el PC?`, "Esta acción es inmediata."))) return;
+    try { setBusy(true); await manager.request("system", action); }
+    catch (e) { Alert.alert("Error", (e as Error).message); }
     finally { setBusy(false); }
   }
 
   async function unpair() {
-    const ok = await confirmAsync("¿Desemparejar?", "Se borrarán las credenciales de este dispositivo.");
-    if (!ok) return;
-    mgr?.disconnect();
+    if (!(await confirmAsync("¿Desemparejar?", "Se borrarán las credenciales."))) return;
+    disconnect();
     await deleteCredentials(deviceId);
     router.replace("/");
   }
 
-  const statusColor =
+  const dotColor =
     state === "connected"      ? colors.success :
     state === "authenticating" ? colors.warn :
     state === "failed"         ? colors.danger :
     colors.textDim;
+
+  const canRemote = state === "connected";
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -105,7 +78,7 @@ export default function DashboardScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>{info?.hostname ?? agentName ?? "PC"}</Text>
             <View style={styles.statusRow}>
-              <View style={[styles.dot, { backgroundColor: statusColor }]} />
+              <View style={[styles.dot, { backgroundColor: dotColor }]} />
               <Text style={styles.statusText}>{stateLabel(state)}</Text>
             </View>
             {error && <Text style={styles.errorText}>{error}</Text>}
@@ -115,35 +88,44 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        {/* Stats tiles */}
         <View style={styles.tiles}>
-          <Tile label="CPU"     value={stats ? `${stats.cpu.toFixed(0)}%` : "—"} />
-          <Tile label="RAM"     value={stats ? `${stats.ramPct.toFixed(0)}%` : "—"}
-                sub={stats ? `${(stats.ramUsedMB / 1024).toFixed(1)} / ${(stats.ramTotalMB / 1024).toFixed(1)} GB` : undefined} />
+          <Tile label="CPU" value={stats ? `${stats.cpu.toFixed(0)}%` : "—"} />
+          <Tile label="RAM" value={stats ? `${stats.ramPct.toFixed(0)}%` : "—"}
+                sub={stats ? `${(stats.ramUsedMB/1024).toFixed(1)} / ${(stats.ramTotalMB/1024).toFixed(1)} GB` : undefined} />
         </View>
 
-        {/* System info */}
+        {/* Grid de control remoto → sub-pantallas */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Control</Text>
+          <View style={styles.grid}>
+            <GridBtn icon="🖱️"  label="Touchpad"  onPress={() => router.push(`/remote/${deviceId}/touchpad`)}  disabled={!canRemote} />
+            <GridBtn icon="⌨️"  label="Teclado"   onPress={() => router.push(`/remote/${deviceId}/keyboard`)}  disabled={!canRemote} />
+            <GridBtn icon="🎵"  label="Media"     onPress={() => router.push(`/remote/${deviceId}/media`)}     disabled={!canRemote} />
+            <GridBtn icon="📱"  label="Apps"      onPress={() => router.push(`/remote/${deviceId}/apps`)}      disabled={!canRemote} />
+            <GridBtn icon="📋"  label="Portapapeles" onPress={() => router.push(`/remote/${deviceId}/clipboard`)} disabled={!canRemote} />
+          </View>
+        </View>
+
         {info && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Sistema</Text>
             <InfoRow k="Usuario"  v={info.username} />
             <InfoRow k="OS"       v={`${info.os} (${info.osBuild})`} />
             <InfoRow k="CPU"      v={`${info.cpuModel} · ${info.cpuCores} cores`} />
-            <InfoRow k="RAM tot." v={`${(info.ramTotalMB / 1024).toFixed(1)} GB`} />
+            <InfoRow k="RAM tot." v={`${(info.ramTotalMB/1024).toFixed(1)} GB`} />
             <InfoRow k="Uptime"   v={formatUptime(info.uptimeSec)} />
             <InfoRow k="Zona"     v={info.timezone} />
           </View>
         )}
 
-        {/* Power controls */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Power</Text>
           <View style={styles.actions}>
-            <ActionBtn label="Bloquear"  onPress={() => runDestructive("lock")}     disabled={busy || state !== "connected"} />
-            <ActionBtn label="Suspender" onPress={() => runDestructive("sleep")}    disabled={busy || state !== "connected"} tone="warn" />
-            <ActionBtn label="Log off"   onPress={() => runDestructive("logoff")}   disabled={busy || state !== "connected"} tone="warn" />
-            <ActionBtn label="Reiniciar" onPress={() => runDestructive("restart")}  disabled={busy || state !== "connected"} tone="danger" />
-            <ActionBtn label="Apagar"    onPress={() => runDestructive("shutdown")} disabled={busy || state !== "connected"} tone="danger" />
+            <ActionBtn label="Bloquear"  onPress={() => runPower("lock")}     disabled={busy || !canRemote} />
+            <ActionBtn label="Suspender" onPress={() => runPower("sleep")}    disabled={busy || !canRemote} tone="warn" />
+            <ActionBtn label="Log off"   onPress={() => runPower("logoff")}   disabled={busy || !canRemote} tone="warn" />
+            <ActionBtn label="Reiniciar" onPress={() => runPower("restart")}  disabled={busy || !canRemote} tone="danger" />
+            <ActionBtn label="Apagar"    onPress={() => runPower("shutdown")} disabled={busy || !canRemote} tone="danger" />
           </View>
         </View>
 
@@ -155,7 +137,7 @@ export default function DashboardScreen() {
   );
 }
 
-// ── Subcomponentes ─────────────────────────────────────────────
+// ── Sub-componentes ────────────────────────────────────────────
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <View style={styles.tile}>
@@ -179,28 +161,22 @@ function ActionBtn({ label, onPress, disabled, tone = "default" }:
   { label: string; onPress: () => void; disabled?: boolean; tone?: "default" | "warn" | "danger" }) {
   const bg = tone === "danger" ? colors.danger : tone === "warn" ? colors.warn : colors.accentDim;
   return (
-    <Pressable
-      style={[styles.actionBtn, { backgroundColor: bg }, disabled && { opacity: 0.35 }]}
-      disabled={disabled}
-      onPress={onPress}
-    >
+    <Pressable style={[styles.actionBtn, { backgroundColor: bg }, disabled && { opacity: 0.35 }]} disabled={disabled} onPress={onPress}>
       <Text style={styles.actionBtnText}>{label}</Text>
     </Pressable>
   );
 }
 
-// ── Utils ──────────────────────────────────────────────────────
-function stateLabel(s: ConnectionState): string {
-  return {
-    disconnected:   "Desconectado",
-    connecting:     "Conectando…",
-    authenticating: "Autenticando…",
-    connected:      "Conectado",
-    reconnecting:   "Reconectando…",
-    failed:         "Falló",
-  }[s];
+function GridBtn({ icon, label, onPress, disabled }: { icon: string; label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable style={[styles.gridBtn, disabled && { opacity: 0.35 }]} disabled={disabled} onPress={onPress}>
+      <Text style={styles.gridIcon}>{icon}</Text>
+      <Text style={styles.gridLabel}>{label}</Text>
+    </Pressable>
+  );
 }
 
+// ── Utils ──────────────────────────────────────────────────────
 function formatUptime(sec: number): string {
   const d = Math.floor(sec / 86400);
   const h = Math.floor((sec % 86400) / 3600);
@@ -212,14 +188,7 @@ function formatUptime(sec: number): string {
   return parts.join(" ");
 }
 
-function confirmAsync(title: string, message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(title, message, [
-      { text: "Cancelar", style: "cancel", onPress: () => resolve(false) },
-      { text: "Sí", style: "destructive", onPress: () => resolve(true) },
-    ]);
-  });
-}
+function cap(s: string): string { return s[0].toUpperCase() + s.slice(1); }
 
 const styles = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.bg },
@@ -244,6 +213,11 @@ const styles = StyleSheet.create({
   infoRow:     { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, gap: spacing.md },
   infoKey:     { color: colors.textDim, fontSize: 13, minWidth: 70 },
   infoVal:     { color: colors.text, fontSize: 13, flex: 1, textAlign: "right" },
+
+  grid:        { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  gridBtn:     { width: "31%", aspectRatio: 1, backgroundColor: colors.bgAlt, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", gap: 4 },
+  gridIcon:    { fontSize: 30 },
+  gridLabel:   { color: colors.text, fontSize: 12, fontWeight: "600" },
 
   actions:     { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   actionBtn:   { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md, minWidth: 100, alignItems: "center" },
