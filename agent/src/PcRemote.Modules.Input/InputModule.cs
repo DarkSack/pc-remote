@@ -1,22 +1,205 @@
+using System.Runtime.Versioning;
+using System.Text.Json;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
+using PcRemote.Modules.Input.Win32;
 
 namespace PcRemote.Modules.Input;
 
-/// <summary>
-/// Skeleton — implemented in Phase 4 (post-MVP).
-/// </summary>
+// ══════════════════════════════════════════════════════════════
+// Input module — control de mouse y teclado vía SendInput.
+//
+// Diseño:
+//   - Mouse move es RELATIVO por defecto (touchpad-style). Un flag
+//     absolute:true acepta coordenadas normalizadas 0..1.
+//   - Los deltas se clampean a ±2000px por evento para evitar
+//     jumps accidentales por bugs del cliente.
+//   - Los clicks toman un botón ("left"|"right"|"middle") + opcional
+//     count (1..3) para doble/triple click.
+//   - keyPress acepta expresiones tipo "ctrl+shift+esc". Se pulsan
+//     modificadores → tecla → se sueltan en orden inverso.
+//   - keyType acepta un string arbitrario y lo emite como Unicode
+//     via SendInput con KEYEVENTF_UNICODE (no depende del layout).
+// ══════════════════════════════════════════════════════════════
+[SupportedOSPlatform("windows")]
 public sealed class InputModule : ICommandModule
 {
     public string Domain => "input";
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
-        new CommandDescriptor("mouseMove","Move mouse relative"),new CommandDescriptor("mouseClick","Click"),new CommandDescriptor("keyPress","Key press"),
+        new CommandDescriptor("mouseMove",   "Mover el cursor (relativo o absoluto)"),
+        new CommandDescriptor("mouseClick",  "Click de mouse (left/right/middle)"),
+        new CommandDescriptor("mouseScroll", "Scroll vertical u horizontal"),
+        new CommandDescriptor("mousePos",    "Obtener posición del cursor"),
+        new CommandDescriptor("keyPress",    "Combo de teclas (ej: ctrl+shift+esc)"),
+        new CommandDescriptor("keyType",     "Escribir texto Unicode"),
     };
 
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
     {
-        return Task.FromResult(CommandResponse.Fail(req.Id, ErrorCodes.InternalError, $"'{req.Action}' not implemented yet."));
+        try
+        {
+            return Task.FromResult(req.Action switch
+            {
+                "mouseMove"   => HandleMouseMove(req),
+                "mouseClick"  => HandleMouseClick(req),
+                "mouseScroll" => HandleMouseScroll(req),
+                "mousePos"    => HandleMousePos(req),
+                "keyPress"    => HandleKeyPress(req),
+                "keyType"     => HandleKeyType(req),
+                _ => CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand, $"Unknown action '{req.Action}'"),
+            });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(CommandResponse.Fail(req.Id, ErrorCodes.InternalError, ex.Message));
+        }
     }
+
+    // ── Mouse ────────────────────────────────────────────────
+
+    private static CommandResponse HandleMouseMove(CommandRequest req)
+    {
+        var p = req.Params ?? default;
+        bool absolute = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("absolute", out var a) && a.ValueKind == JsonValueKind.True;
+
+        if (absolute)
+        {
+            var x = p.GetProperty("x").GetDouble();
+            var y = p.GetProperty("y").GetDouble();
+            if (x < 0 || x > 1 || y < 0 || y > 1)
+                return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, "Absolute x,y must be in [0,1]");
+
+            var screenW = InputNative.GetSystemMetrics(InputNative.SM_CXSCREEN);
+            var screenH = InputNative.GetSystemMetrics(InputNative.SM_CYSCREEN);
+            InputNative.SetCursorPos((int)Math.Round(x * screenW), (int)Math.Round(y * screenH));
+            return CommandResponse.Ok(req.Id, new { moved = true });
+        }
+        else
+        {
+            var dx = ClampDelta((int)p.GetProperty("dx").GetDouble());
+            var dy = ClampDelta((int)p.GetProperty("dy").GetDouble());
+            var input = new InputNative.INPUT
+            {
+                type = InputNative.INPUT_MOUSE,
+                U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dx = dx, dy = dy, dwFlags = InputNative.MOUSEEVENTF_MOVE } },
+            };
+            InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+            return CommandResponse.Ok(req.Id, new { moved = true });
+        }
+    }
+
+    private static CommandResponse HandleMouseClick(CommandRequest req)
+    {
+        var p = req.Params ?? default;
+        var button = p.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
+        var count  = p.TryGetProperty("count",  out var c) ? Math.Clamp(c.GetInt32(), 1, 3) : 1;
+
+        (uint down, uint up) flags = button.ToLowerInvariant() switch
+        {
+            "left"   => (InputNative.MOUSEEVENTF_LEFTDOWN,   InputNative.MOUSEEVENTF_LEFTUP),
+            "right"  => (InputNative.MOUSEEVENTF_RIGHTDOWN,  InputNative.MOUSEEVENTF_RIGHTUP),
+            "middle" => (InputNative.MOUSEEVENTF_MIDDLEDOWN, InputNative.MOUSEEVENTF_MIDDLEUP),
+            _ => (0, 0),
+        };
+        if (flags.down == 0)
+            return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, $"Unknown button '{button}'");
+
+        var events = new List<InputNative.INPUT>(count * 2);
+        for (int i = 0; i < count; i++)
+        {
+            events.Add(new InputNative.INPUT { type = InputNative.INPUT_MOUSE, U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = flags.down } } });
+            events.Add(new InputNative.INPUT { type = InputNative.INPUT_MOUSE, U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = flags.up } } });
+        }
+        InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        return CommandResponse.Ok(req.Id, new { clicked = button, count });
+    }
+
+    private static CommandResponse HandleMouseScroll(CommandRequest req)
+    {
+        var p = req.Params ?? default;
+        var amount = ClampDelta((int)p.GetProperty("amount").GetDouble());
+        var horizontal = p.TryGetProperty("horizontal", out var h) && h.ValueKind == JsonValueKind.True;
+
+        var input = new InputNative.INPUT
+        {
+            type = InputNative.INPUT_MOUSE,
+            U = new InputNative.INPUTUNION
+            {
+                mi = new InputNative.MOUSEINPUT
+                {
+                    dwFlags   = horizontal ? InputNative.MOUSEEVENTF_HWHEEL : InputNative.MOUSEEVENTF_WHEEL,
+                    mouseData = unchecked((uint)(amount * (int)InputNative.WHEEL_DELTA)),
+                },
+            },
+        };
+        InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        return CommandResponse.Ok(req.Id, new { scrolled = amount });
+    }
+
+    private static CommandResponse HandleMousePos(CommandRequest req)
+    {
+        if (!InputNative.GetCursorPos(out var pt))
+            return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, "GetCursorPos failed");
+        var w = InputNative.GetSystemMetrics(InputNative.SM_CXSCREEN);
+        var h = InputNative.GetSystemMetrics(InputNative.SM_CYSCREEN);
+        return CommandResponse.Ok(req.Id, new { x = pt.X, y = pt.Y, screenW = w, screenH = h });
+    }
+
+    // ── Keyboard ─────────────────────────────────────────────
+
+    private static CommandResponse HandleKeyPress(CommandRequest req)
+    {
+        var p = req.Params ?? default;
+        var keys = p.GetProperty("keys").GetString() ?? "";
+        if (!VirtualKeys.TryResolve(keys, out var vks) || vks.Length == 0)
+            return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, $"Cannot resolve keys '{keys}'");
+
+        var events = new List<InputNative.INPUT>(vks.Length * 2);
+        // Down en orden, up en reverso
+        for (int i = 0; i < vks.Length; i++)
+            events.Add(KeyEvent(vks[i], 0));
+        for (int i = vks.Length - 1; i >= 0; i--)
+            events.Add(KeyEvent(vks[i], InputNative.KEYEVENTF_KEYUP));
+
+        InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        return CommandResponse.Ok(req.Id, new { pressed = keys });
+    }
+
+    private static CommandResponse HandleKeyType(CommandRequest req)
+    {
+        var p = req.Params ?? default;
+        var text = p.GetProperty("text").GetString() ?? "";
+        if (text.Length > 4096)
+            return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, "Text too long (max 4096)");
+
+        var events = new List<InputNative.INPUT>(text.Length * 2);
+        foreach (var ch in text)
+        {
+            events.Add(UnicodeEvent(ch, 0));
+            events.Add(UnicodeEvent(ch, InputNative.KEYEVENTF_KEYUP));
+        }
+        if (events.Count > 0)
+            InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        return CommandResponse.Ok(req.Id, new { typed = text.Length });
+    }
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    private static int ClampDelta(int v) => Math.Clamp(v, -2000, 2000);
+
+    private static InputNative.INPUT KeyEvent(ushort vk, uint flags) =>
+        new()
+        {
+            type = InputNative.INPUT_KEYBOARD,
+            U = new InputNative.INPUTUNION { ki = new InputNative.KEYBDINPUT { wVk = vk, dwFlags = flags } },
+        };
+
+    private static InputNative.INPUT UnicodeEvent(char ch, uint extraFlags) =>
+        new()
+        {
+            type = InputNative.INPUT_KEYBOARD,
+            U = new InputNative.INPUTUNION { ki = new InputNative.KEYBDINPUT { wScan = ch, dwFlags = InputNative.KEYEVENTF_UNICODE | extraFlags } },
+        };
 }
