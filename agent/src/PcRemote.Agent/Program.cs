@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PcRemote.Agent.Tray;
 using PcRemote.Core;
+using PcRemote.Core.Panel;
 using Serilog;
 
 namespace PcRemote.Agent;
@@ -22,8 +23,10 @@ internal static class Program
         var host = AgentHost.Build();
 
         // Serilog is wired from appsettings.json (Serilog.Settings.Configuration).
+        // Also add the in-memory ring buffer sink so the web panel can serve /api/logs.
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(host.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>())
+            .WriteTo.Sink(InMemoryLogSink.Instance)
             .CreateLogger();
 
         try

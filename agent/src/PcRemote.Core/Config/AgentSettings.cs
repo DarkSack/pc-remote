@@ -8,6 +8,13 @@ public sealed class AgentSettings
     public StorageSettings   Storage   { get; init; } = new();
     public PairingSettings   Pairing   { get; init; } = new();
     public SessionSettings   Session   { get; init; } = new();
+    public PanelSettings     Panel     { get; init; } = new();
+}
+
+public sealed class PanelSettings
+{
+    public bool Enabled { get; init; } = true;
+    public int  Port    { get; init; } = 47821;
 }
 
 public sealed class WebSocketSettings

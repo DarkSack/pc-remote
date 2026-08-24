@@ -104,6 +104,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         menu.Items.Add(fingerprintItem);
 
+        if (settings.Panel.Enabled)
+        {
+            var openPanel = new ToolStripMenuItem("Open web panel…") { Font = new Font(menu.Font, FontStyle.Bold) };
+            openPanel.Click += (_, _) =>
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName        = $"http://localhost:{settings.Panel.Port}/",
+                    UseShellExecute = true,
+                });
+            };
+            menu.Items.Add(openPanel);
+        }
+
         var manageDevices = new ToolStripMenuItem("Manage devices…");
         manageDevices.Click += (_, _) => ShowDevicesDialog(devices);
         menu.Items.Add(manageDevices);

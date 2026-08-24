@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
+using PcRemote.Core.Panel;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
 using PcRemote.Core.Security;
@@ -74,6 +75,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
                 ? IPAddress.Any
                 : IPAddress.Parse(_settings.WebSocket.BindAddress);
 
+            // Puerto WSS público (protocolo del móvil).
             kestrel.Listen(bindAddress, _settings.WebSocket.Port, listen =>
             {
                 listen.UseHttps(new HttpsConnectionAdapterOptions
@@ -81,7 +83,20 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
                     ServerCertificate = _certificate,
                 });
             });
+
+            // Panel web: HTTP loopback-only, nunca accesible desde la red.
+            if (_settings.Panel.Enabled)
+            {
+                kestrel.Listen(IPAddress.Loopback, _settings.Panel.Port);
+            }
         });
+
+        // El panel necesita algunos servicios en DI para sus endpoints.
+        builder.Services.AddSingleton(_settings);
+        builder.Services.AddSingleton(_certificate);
+        builder.Services.AddSingleton(_connections);
+        builder.Services.AddSingleton(_pairing);
+        builder.Services.AddSingleton(_devices);
 
         _app = builder.Build();
         _app.UseWebSockets(new WebSocketOptions
@@ -90,7 +105,15 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         });
 
         _app.Map("/ws", HandleWebSocket);
-        _app.Map("/", () => Results.Text($"PC Remote agent · v{GetVersion()}", "text/plain"));
+
+        if (_settings.Panel.Enabled)
+        {
+            _app.MapPanel(_settings.Panel.Port);
+        }
+        else
+        {
+            _app.Map("/", () => Results.Text($"PC Remote agent · v{GetVersion()}", "text/plain"));
+        }
 
         await _app.StartAsync(cancellationToken);
 
@@ -98,6 +121,11 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             "WebSocket server listening on wss://{Address}:{Port}/ws",
             _settings.WebSocket.BindAddress,
             _settings.WebSocket.Port);
+
+        if (_settings.Panel.Enabled)
+        {
+            _logger.LogInformation("Panel web available at http://localhost:{Port}/", _settings.Panel.Port);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════

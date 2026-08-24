@@ -1,0 +1,33 @@
+using System.Collections.Concurrent;
+using Serilog.Core;
+using Serilog.Events;
+
+namespace PcRemote.Core.Panel;
+
+// ══════════════════════════════════════════════════════════════
+// Ring buffer de las últimas N líneas de log, servido al panel
+// web vía /api/logs. Singleton porque tanto Serilog (durante boot)
+// como los endpoints (durante request) necesitan la misma instancia.
+// ══════════════════════════════════════════════════════════════
+public sealed class InMemoryLogSink : ILogEventSink
+{
+    public static readonly InMemoryLogSink Instance = new();
+
+    private const int Capacity = 500;
+    private readonly ConcurrentQueue<LogLine> _log = new();
+
+    public record LogLine(DateTime Ts, string Level, string Message);
+
+    public void Emit(LogEvent evt)
+    {
+        var line = new LogLine(
+            evt.Timestamp.UtcDateTime,
+            evt.Level.ToString(),
+            evt.RenderMessage());
+
+        _log.Enqueue(line);
+        while (_log.Count > Capacity && _log.TryDequeue(out _)) { }
+    }
+
+    public IReadOnlyList<LogLine> Snapshot() => _log.ToArray();
+}
