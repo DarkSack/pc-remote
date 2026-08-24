@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -143,66 +144,79 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     {
         ClientSession? session = null;
         byte[] pendingNonce = Array.Empty<byte>();
+        var subscriptions = new ConcurrentDictionary<string, CancellationTokenSource>();
 
-        while (socket.State == WebSocketState.Open)
+        try
         {
-            var raw = await ReceiveTextAsync(socket, ct);
-            if (raw is null) break;
-
-            MessageHeader? header;
-            try
+            while (socket.State == WebSocketState.Open)
             {
-                header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts);
+                var raw = await ReceiveTextAsync(socket, ct);
+                if (raw is null) break;
+
+                MessageHeader? header;
+                try { header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts); }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning("Malformed JSON from {Ip}: {Msg}", clientIp, ex.Message);
+                    continue;
+                }
+                if (header is null) continue;
+
+                switch (header.Kind)
+                {
+                    case MessageKinds.PairInit:
+                        await OnPairInit(socket, clientIp, ct);
+                        break;
+
+                    case MessageKinds.PairConfirm:
+                        await OnPairConfirm(socket, clientIp, raw, ct);
+                        break;
+
+                    case MessageKinds.Auth:
+                        session = await OnAuth(socket, clientIp, raw, pendingNonce, ct);
+                        if (session is not null) onSessionEstablished(session);
+                        break;
+
+                    case MessageKinds.Ping:
+                        await SendAsync(socket, new { kind = MessageKinds.Pong, ts = Now() }, ct);
+                        break;
+
+                    case MessageKinds.Request:
+                        if (session is null)
+                        {
+                            pendingNonce = IssueChallenge(socket, ct);
+                            continue;
+                        }
+                        await OnRequest(socket, raw, session, ct);
+                        break;
+
+                    case MessageKinds.Subscribe:
+                        if (session is null)
+                        {
+                            pendingNonce = IssueChallenge(socket, ct);
+                            continue;
+                        }
+                        await OnSubscribe(socket, raw, session, subscriptions, ct);
+                        break;
+
+                    case MessageKinds.Unsubscribe:
+                        OnUnsubscribe(raw, subscriptions);
+                        break;
+
+                    default:
+                        if (session is null)
+                            pendingNonce = IssueChallenge(socket, ct);
+                        else
+                            _logger.LogDebug("Ignoring unknown kind '{Kind}' from session {Sess}",
+                                header.Kind, session.SessionId[..8]);
+                        break;
+                }
             }
-            catch (JsonException ex)
-            {
-                _logger.LogWarning("Malformed JSON from {Ip}: {Msg}", clientIp, ex.Message);
-                continue;
-            }
-
-            if (header is null) continue;
-
-            switch (header.Kind)
-            {
-                case MessageKinds.PairInit:
-                    await OnPairInit(socket, clientIp, ct);
-                    break;
-
-                case MessageKinds.PairConfirm:
-                    await OnPairConfirm(socket, clientIp, raw, ct);
-                    break;
-
-                case MessageKinds.Auth:
-                    session = await OnAuth(socket, clientIp, raw, pendingNonce, ct);
-                    if (session is not null) onSessionEstablished(session);
-                    break;
-
-                case MessageKinds.Ping:
-                    await SendAsync(socket, new { kind = MessageKinds.Pong, ts = Now() }, ct);
-                    break;
-
-                case MessageKinds.Request:
-                    if (session is null)
-                    {
-                        // First contact of an already-paired client: send challenge.
-                        pendingNonce = IssueChallenge(socket, ct);
-                        continue;
-                    }
-                    await OnRequest(socket, raw, session, ct);
-                    break;
-
-                default:
-                    if (session is null)
-                    {
-                        pendingNonce = await OnFirstContactAsync(socket, ct);
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Ignoring unknown kind '{Kind}' from session {Sess}",
-                            header.Kind, session.SessionId[..8]);
-                    }
-                    break;
-            }
+        }
+        finally
+        {
+            foreach (var kv in subscriptions) kv.Value.Cancel();
+            subscriptions.Clear();
         }
     }
 
@@ -342,6 +356,82 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         }
         var response = await _router.DispatchAsync(req, session, ct);
         await SendAsync(socket, response, ct);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Streams (subscribe / unsubscribe)
+    // ══════════════════════════════════════════════════════════════
+    private async Task OnSubscribe(
+        WebSocket socket,
+        string raw,
+        ClientSession session,
+        ConcurrentDictionary<string, CancellationTokenSource> subs,
+        CancellationToken outerCt)
+    {
+        var req = JsonSerializer.Deserialize<CommandRequest>(raw, JsonOpts);
+        if (req is null) return;
+
+        if (!_router.Modules.TryGetValue(req.Domain, out var module))
+        {
+            await SendAsync(socket, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
+                $"Unknown domain '{req.Domain}'."), outerCt);
+            return;
+        }
+
+        if (module is not IStreamModule streamer || !streamer.StreamActions.Contains(req.Action))
+        {
+            await SendAsync(socket, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
+                $"Action '{req.Domain}.{req.Action}' is not streamable."), outerCt);
+            return;
+        }
+
+        // Cancel previous subscription with same id, if any.
+        if (subs.TryRemove(req.Id, out var prev)) prev.Cancel();
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
+        subs[req.Id] = cts;
+        await SendAsync(socket, CommandResponse.Ok(req.Id, new { subscribed = true }), outerCt);
+        _logger.LogInformation("[{Sess}] subscribed {Domain}.{Action} (id={Id})",
+            session.SessionId[..8], req.Domain, req.Action, req.Id);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var item in streamer.StartStreamAsync(req.Action, req.Params, session, cts.Token))
+                {
+                    if (cts.IsCancellationRequested) break;
+                    await SendAsync(socket, new
+                    {
+                        kind = MessageKinds.Stream,
+                        id   = req.Id,
+                        data = item,
+                        ts   = Now(),
+                    }, cts.Token);
+                }
+            }
+            catch (OperationCanceledException) { /* normal on unsubscribe */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stream {Domain}.{Action} (id={Id}) errored", req.Domain, req.Action, req.Id);
+            }
+            finally
+            {
+                subs.TryRemove(req.Id, out _);
+                _logger.LogInformation("[{Sess}] stream {Id} ended", session.SessionId[..8], req.Id);
+            }
+        }, outerCt);
+    }
+
+    private void OnUnsubscribe(string raw, ConcurrentDictionary<string, CancellationTokenSource> subs)
+    {
+        var header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts);
+        if (header?.Id is null) return;
+        if (subs.TryRemove(header.Id, out var cts))
+        {
+            cts.Cancel();
+            _logger.LogInformation("Unsubscribed {Id}", header.Id);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════

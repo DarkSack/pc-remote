@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Management;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text.Json;
 using Microsoft.Win32;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
@@ -10,24 +12,27 @@ namespace PcRemote.Modules.SystemInfo;
 
 /// <summary>
 /// System info + realtime stats.
-///   - "info"  → static host info (os, cpu model, ram total, uptime, hostname).
-///   - "stats" → snapshot of cpu%, ram%, ram used/total.
-/// Streaming (subscribe) lands in Phase 3b.
+///   - "info"  → request/response: static host info.
+///   - "stats" → request/response: single snapshot of cpu%/ram%.
+///   - "stats" → subscribe:       stream of snapshots every params.intervalMs (default 1000).
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class SystemInfoModule : ICommandModule, IDisposable
+public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposable
 {
     public string Domain => "systeminfo";
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("info",  "Static system information"),
-        new CommandDescriptor("stats", "Snapshot of CPU / RAM usage"),
+        new CommandDescriptor("stats", "Snapshot or stream of CPU / RAM usage"),
     };
+
+    public IReadOnlySet<string> StreamActions { get; } = new HashSet<string> { "stats" };
 
     private readonly PerformanceCounter _cpuCounter = new("Processor", "% Processor Time", "_Total");
     private bool _cpuCounterPrimed;
 
+    // ── request/response ──────────────────────────────────
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
     {
         try
@@ -35,23 +40,55 @@ public sealed class SystemInfoModule : ICommandModule, IDisposable
             return Task.FromResult(req.Action switch
             {
                 "info"  => GetInfo(req.Id),
-                "stats" => GetStats(req.Id),
+                "stats" => CommandResponse.Ok(req.Id, SampleStats()),
                 _ => CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
                         $"Unknown action '{req.Action}' in systeminfo domain."),
             });
         }
         catch (Exception ex)
         {
-            return Task.FromResult(CommandResponse.Fail(
-                req.Id, ErrorCodes.InternalError, ex.Message));
+            return Task.FromResult(CommandResponse.Fail(req.Id, ErrorCodes.InternalError, ex.Message));
         }
     }
 
-    // ── info ─────────────────────────────────────────────────
+    // ── subscribe (stream) ─────────────────────────────────
+    public async IAsyncEnumerable<object> StartStreamAsync(
+        string action,
+        JsonElement? parameters,
+        ClientSession session,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (action != "stats")
+            yield break;
+
+        var intervalMs = 1000;
+        if (parameters is { ValueKind: JsonValueKind.Object } p &&
+            p.TryGetProperty("intervalMs", out var el) &&
+            el.TryGetInt32(out var v))
+        {
+            intervalMs = Math.Clamp(v, 250, 60_000);
+        }
+
+        // Prime counter so the first value isn't 0.
+        if (!_cpuCounterPrimed)
+        {
+            _cpuCounter.NextValue();
+            await Task.Delay(150, ct);
+            _cpuCounterPrimed = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            yield return SampleStats();
+            try { await Task.Delay(intervalMs, ct); } catch (TaskCanceledException) { yield break; }
+        }
+    }
+
+    // ── info ────────────────────────────────────────────
     private static CommandResponse GetInfo(string id)
     {
         var mem = GetMemoryStatus();
-        var payload = new
+        return CommandResponse.Ok(id, new
         {
             hostname   = Environment.MachineName,
             username   = Environment.UserName,
@@ -63,12 +100,11 @@ public sealed class SystemInfoModule : ICommandModule, IDisposable
             ramTotalMB = mem?.totalMB ?? 0,
             uptimeSec  = Environment.TickCount64 / 1000,
             timezone   = TimeZoneInfo.Local.Id,
-        };
-        return CommandResponse.Ok(id, payload);
+        });
     }
 
-    // ── stats ────────────────────────────────────────────────
-    private CommandResponse GetStats(string id)
+    // ── stats snapshot (shared by request/response and stream) ──
+    private object SampleStats()
     {
         if (!_cpuCounterPrimed)
         {
@@ -77,9 +113,8 @@ public sealed class SystemInfoModule : ICommandModule, IDisposable
             _cpuCounterPrimed = true;
         }
         var cpu = Math.Round(_cpuCounter.NextValue(), 1);
-
         var mem = GetMemoryStatus();
-        var payload = new
+        return new
         {
             cpu,
             ramPct     = mem is null ? 0 : Math.Round(mem.Value.usedPct, 1),
@@ -87,10 +122,9 @@ public sealed class SystemInfoModule : ICommandModule, IDisposable
             ramTotalMB = mem?.totalMB ?? 0,
             ts         = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
-        return CommandResponse.Ok(id, payload);
     }
 
-    // ── Helpers ─────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────
     private static string GetOsName()
     {
         try
@@ -110,10 +144,7 @@ public sealed class SystemInfoModule : ICommandModule, IDisposable
             using var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
             return key?.GetValue("ProcessorNameString")?.ToString()?.Trim() ?? "unknown";
         }
-        catch
-        {
-            return "unknown";
-        }
+        catch { return "unknown"; }
     }
 
     private static (double usedPct, long usedMB, long totalMB)? GetMemoryStatus()
