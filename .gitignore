@@ -41,3 +41,11 @@ Desktop.ini
 # Build artifacts
 *.tsbuildinfo
 *.tgz
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.jks
+*.keystore
+captures/
