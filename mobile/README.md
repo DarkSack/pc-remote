@@ -6,17 +6,19 @@ Ver la [documentación general](../README.md) y [`docs/`](../docs/) para arquite
 
 ## Estado
 
-📐 **Fase 3c** — core de red implementado end-to-end (mismo protocolo que el agente):
+✅ **Fase 3d — MVP completo**:
 
-- ✅ `src/net/protocol.ts` — tipos completos del protocolo
-- ✅ `src/net/crypto.ts` — Ed25519 keygen + sign (via `@noble/ed25519`)
-- ✅ `src/net/discovery.ts` — mDNS con `react-native-zeroconf`
-- ✅ `src/net/pairing.ts` — flujo pair_init → código → pair_confirm → guardar creds
-- ✅ `src/net/connection.ts` — FSM completo (connect → auth challenge → session), reconexión con backoff exponencial, ping/pong 15/5s, request/response y subscribe/stream con timeouts
-- ✅ `src/storage/secure.ts` — credenciales en `expo-secure-store` (Android Keystore)
-- ✅ `src/stores/connection.ts` — zustand store para estado global
-
-Fase 3d (próxima): UI real de discovery, pairing y dashboard.
+- Core de red: protocol / crypto (Ed25519) / discovery (mDNS) / pairing /
+  connection (FSM + reconexión + streams + ping/pong) / secure store.
+- UI:
+  - **Discovery** (`app/index.tsx`): lista dispositivos emparejados + escaneo
+    mDNS de la LAN con los agentes no emparejados.
+  - **Pairing** (`app/pair/[host].tsx`): input de código 6 dígitos + nombre
+    del dispositivo, con estados connecting/waiting_code/confirming/done/error.
+  - **Dashboard** (`app/dashboard/[deviceId].tsx`): tiles de CPU/RAM en tiempo
+    real (`systeminfo.stats` @1s), info del sistema, botones de power
+    (Bloquear / Suspender / Log off / Reiniciar / Apagar) con confirmación,
+    unpair.
 
 ## Correr en desarrollo
 
@@ -31,20 +33,24 @@ Abre en Expo Go (Android) o en un emulador. Requiere estar en la misma red LAN q
 
 ```
 mobile/
-├── app/                     # expo-router
+├── app/                        # expo-router
 │   ├── _layout.tsx
-│   ├── index.tsx            # placeholder (Fase 3d lo reemplaza con discovery)
-│   ├── pair/[deviceId].tsx  # placeholder
-│   └── dashboard/index.tsx  # placeholder
+│   ├── index.tsx               # discovery + emparejados
+│   ├── pair/[host].tsx         # pairing con código 6 dígitos
+│   └── dashboard/[deviceId].tsx  # tiles + info + power
 └── src/
     ├── net/
-    │   ├── protocol.ts      # tipos WS
-    │   ├── crypto.ts        # Ed25519
-    │   ├── discovery.ts     # mDNS
-    │   ├── pairing.ts       # flujo de pairing
-    │   └── connection.ts    # FSM + reconexión + streams
+    │   ├── protocol.ts         # tipos WS
+    │   ├── crypto.ts           # Ed25519
+    │   ├── discovery.ts        # mDNS
+    │   ├── pairing.ts          # PairingSession
+    │   └── connection.ts       # ConnectionManager
     ├── storage/
-    │   └── secure.ts        # credentials
-    └── stores/
-        └── connection.ts    # zustand
+    │   └── secure.ts           # credentials
+    ├── stores/
+    │   └── connection.ts       # zustand
+    ├── ui/
+    │   └── theme.ts            # tokens
+    └── types/
+        └── react-native-zeroconf.d.ts
 ```

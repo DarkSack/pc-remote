@@ -1,42 +1,37 @@
 # Roadmap
 
-## Fase 0 · Scaffolding + docs · **✅ ACTUAL**
+## Fase 0 · Scaffolding + docs · ✅
 
-Este commit. Estructura de carpetas, `.csproj`, interfaces base, protocolo
-documentado, MVP definido. Sin lógica.
+Estructura de carpetas, `.csproj`, interfaces base, protocolo documentado,
+MVP definido.
 
-## Fase 1 · Fundaciones agente (~1 sem)
+## Fase 1 · Fundaciones agente · ✅
 
-- [ ] Serilog + `Microsoft.Extensions.Hosting` cableado en `PcRemote.Agent`.
-- [ ] `PcRemote.Core.Server.WebSocketServer` sobre Kestrel + WSS.
-- [ ] Generación automática del certificado autofirmado en primer arranque
-      (guardado en `%LOCALAPPDATA%\PcRemote\cert.pfx`).
-- [ ] `PcRemote.Core.Storage.AgentDatabase` con migraciones (SQLite).
-- [ ] `PcRemote.Core.Discovery.MdnsPublisher` con Makaretu.Dns.
-- [ ] Tray funcional: muestra puerto, IP, estado de conexiones.
+- [x] Serilog + `Microsoft.Extensions.Hosting`.
+- [x] `WebSocketServer` sobre Kestrel + WSS + cert autofirmado persistente.
+- [x] `AgentDatabase` SQLite (devices/sessions/command_log).
+- [x] `MdnsPublisher` con Makaretu.Dns.
+- [x] Tray funcional: estado, notificaciones de pair code, Manage devices.
 
-## Fase 2 · Auth + protocolo (~1 sem)
+## Fase 2 · Auth + protocolo · ✅
 
-- [ ] `PcRemote.Core.Auth.PairingService`: código 6 dígitos, rate limit,
-      lockout.
-- [ ] Ed25519 challenge-response con NSec.Cryptography.
-- [ ] `PcRemote.Core.Router.CommandRouter`: descubre módulos por
-      reflection, dispatchea.
-- [ ] Módulo de prueba `ping` → verifica end-to-end.
-- [ ] "Manage devices" en el tray (list + revoke).
+- [x] `PairingService`: código 6 dígitos, TTL, rate limit, lockout.
+- [x] Ed25519 challenge-response con NSec.
+- [x] `CommandRouter` con reflection + `Assembly.LoadFrom` para descubrir
+      módulos en el `bin/`.
+- [x] Módulos `ping` + esqueletos de los 8 dominios.
 
-## Fase 3 · Sistema + Info + Mobile MVP (~1 sem)
+## Fase 3 · Sistema + Info + Mobile MVP · ✅
 
-- [ ] Implementación de `SystemModule` (shutdown/restart/sleep/hibernate/
-      lock/logoff) usando Win32.
-- [ ] Implementación de `SystemInfoModule` con Perf Counters + WMI +
-      `GlobalMemoryStatusEx`.
-- [ ] Mobile: scaffold Expo con `expo-router`.
-- [ ] `src/net/discovery.ts` con `react-native-zeroconf`.
-- [ ] `src/net/connection.ts` FSM + reconexión + pinning.
-- [ ] `src/net/crypto.ts` Ed25519 con `@noble/ed25519`.
-- [ ] Pairing UI + Dashboard con stream de stats + tiles.
-- [ ] Confirmaciones destructivas (SweetAlert-equivalente en RN).
+- [x] **3a** `SystemModule` real (shutdown/restart/sleep/hibernate/lock/logoff)
+      vía Win32.
+- [x] **3a** `SystemInfoModule` real con Perf Counters + WMI + `GlobalMemoryStatusEx`.
+- [x] **3b** Subscribe/stream/unsubscribe end-to-end (`IStreamModule`).
+- [x] **3c** Mobile core de red: `protocol.ts`, `crypto.ts` (Ed25519),
+      `discovery.ts` (mDNS), `pairing.ts`, `connection.ts` (FSM + reconexión +
+      streams + ping/pong), `secure.ts` (expo-secure-store).
+- [x] **3d** UI: discovery + pairing con código 6 dígitos + dashboard con
+      stream de stats + tiles + confirmaciones destructivas (`Alert.alert`).
 
 **Fin del MVP** — criterios de aceptación en [`MVP.md`](MVP.md).
 

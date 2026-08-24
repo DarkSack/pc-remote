@@ -14,14 +14,8 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ title: "PC Remote" }} />
-        <Stack.Screen
-          name="pair/[deviceId]"
-          options={{ title: "Pair device" }}
-        />
-        <Stack.Screen
-          name="dashboard/index"
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="pair/[host]" options={{ title: "Emparejar" }} />
+        <Stack.Screen name="dashboard/[deviceId]" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaProvider>
   );
