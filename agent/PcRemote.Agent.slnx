@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PcRemote.Agent/PcRemote.Agent.csproj" />
+    <Project Path="src/PcRemote.Core/PcRemote.Core.csproj" />
+    <Project Path="src/PcRemote.Modules.Applications/PcRemote.Modules.Applications.csproj" />
+    <Project Path="src/PcRemote.Modules.Clipboard/PcRemote.Modules.Clipboard.csproj" />
+    <Project Path="src/PcRemote.Modules.Input/PcRemote.Modules.Input.csproj" />
+    <Project Path="src/PcRemote.Modules.Media/PcRemote.Modules.Media.csproj" />
+    <Project Path="src/PcRemote.Modules.Processes/PcRemote.Modules.Processes.csproj" />
+    <Project Path="src/PcRemote.Modules.System/PcRemote.Modules.System.csproj" />
+    <Project Path="src/PcRemote.Modules.SystemInfo/PcRemote.Modules.SystemInfo.csproj" />
+    <Project Path="src/PcRemote.Modules.Windows/PcRemote.Modules.Windows.csproj" />
+  </Folder>
+</Solution>
