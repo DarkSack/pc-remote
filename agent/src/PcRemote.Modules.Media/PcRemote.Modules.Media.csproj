@@ -3,6 +3,8 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RootNamespace>PcRemote.Modules.Media</RootNamespace>
+    <!-- WinRT APIs SMTC no llevan SupportedOSPlatformAttribute; target ya es 10.0.19041 > 10.0.17763 requerido -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
