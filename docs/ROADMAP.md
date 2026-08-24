@@ -35,19 +35,26 @@ MVP definido.
 
 **Fin del MVP** — criterios de aceptación en [`MVP.md`](MVP.md).
 
-## Fase 4 · Módulos post-MVP
+## Fase 4 · Módulos post-MVP · ✅
 
-Orden sugerido (por valor / dependencia técnica):
+Los 6 módulos han sido implementados en tandas separadas, cada uno con
+su propio commit funcional. Todos compilan en la solution completa.
 
-1. **`Input`** (mouse touchpad + teclado virtual). Bloqueante para el
-   siguiente hito: control real del PC. Requiere `SendInput` + throttle
-   adaptativo por RTT.
-2. **`Clipboard`** — read/write + watch con `WM_CLIPBOARDUPDATE`.
-3. **`Media`** — SMTC (metadata + play/pause/next) + volumen con NAudio.
-4. **`Windows`** — enum + focus/min/max/close.
-5. **`Processes`** — list + kill (con confirmación).
-6. **`Applications`** — enum 3 fuentes (Registry, StartMenu, UWP) + cache
-   SQLite + launch.
+1. **`Input`** ✅ — mouse move (relativo/absoluto), click (l/r/m + count),
+   scroll (v/h), pos, keyPress (combos tipo `ctrl+shift+esc`), keyType
+   (Unicode). Deltas clampeados a ±2000 para evitar jumps.
+2. **`Clipboard`** ✅ — get/set/clear + watch como `IStreamModule` (poll
+   500 ms). STA marshaling on-demand para el API WinForms.
+3. **`Media`** ✅ — SMTC (play/pause/next/previous/nowPlaying con título/
+   artista/álbum + PlaybackStatus) + NAudio (volumeGet/Set/Mute del
+   default endpoint).
+4. **`Windows`** ✅ — list (top-level visibles con hwnd/title/pid/rect),
+   focus / minimize / maximize / restore / close (WM_CLOSE).
+5. **`Processes`** ✅ — list (top por WorkingSet, filter opcional), kill
+   (guardas: self-pid + procesos protegidos del sistema). Destructive:true.
+6. **`Applications`** ✅ — 3 fuentes (Start Menu .lnk, Registry Uninstall,
+   UWP vía `Get-StartApps`) con cache TTL 5 min y dedup por nombre; launch
+   estable por id (`source:key`).
 
 ## Fase 5 · Nice-to-haves
 
