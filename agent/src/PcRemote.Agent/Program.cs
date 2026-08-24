@@ -1,26 +1,58 @@
+using System.Runtime.Versioning;
 using System.Windows.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PcRemote.Agent.Tray;
+using PcRemote.Core;
+using Serilog;
 
 namespace PcRemote.Agent;
 
-/// <summary>
-/// Entry point of the PC Remote agent (Windows tray application).
-/// Does not open a visible window; lives in the system tray.
-/// </summary>
+/// <summary>Entry point of the PC Remote agent (Windows tray application).</summary>
+[SupportedOSPlatform("windows")]
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static int Main()
     {
         ApplicationConfiguration.Initialize();
-        Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        // TODO F1: wire Serilog + Microsoft.Extensions.Hosting
-        // TODO F1: bootstrap PcRemote.Core.Server (Kestrel + wss) as hosted service
-        // TODO F1: load configured modules via reflection
+        var host = AgentHost.Build();
 
-        Application.Run(new TrayApplicationContext());
+        // Serilog is wired from appsettings.json (Serilog.Settings.Configuration).
+        Log.Logger = new LoggerConfiguration()
+            .ReadFrom.Configuration(host.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>())
+            .CreateLogger();
+
+        try
+        {
+            Log.Information("Agent starting…");
+
+            // Start the .NET Host in the background; tray UI runs on the STA main thread.
+            var cts       = new CancellationTokenSource();
+            var hostTask  = host.StartAsync(cts.Token);
+            hostTask.GetAwaiter().GetResult();
+
+            using var tray = new TrayApplicationContext(host.Services, () =>
+            {
+                cts.Cancel();
+                try { host.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { /* best effort */ }
+            });
+
+            Application.Run(tray);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Agent crashed");
+            MessageBox.Show(ex.Message, "PC Remote — fatal error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
     }
 }
