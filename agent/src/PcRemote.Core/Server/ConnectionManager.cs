@@ -106,7 +106,7 @@ public sealed class TrackedConnection : IDisposable
     {
         try
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var timeout = new CancellationTokenSource(CloseHandshakeTimeout);
             await _sendLock.WaitAsync(timeout.Token).ConfigureAwait(false);
             try
             {

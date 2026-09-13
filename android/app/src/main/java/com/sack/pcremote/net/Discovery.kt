@@ -3,6 +3,7 @@ package com.sack.pcremote.net
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -10,11 +11,13 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.Inet4Address
+import java.net.InetAddress
 import kotlin.coroutines.resume
 
 // ══════════════════════════════════════════════════════════════
 // mDNS discovery vía NsdManager (built-in Android — sin lib externa).
-// El agente publica _pcremote._tcp con TXT { hostname, os, version }.
+// El agente publica _pcremote._tcp con TXT { hostname, os, version, fp }.
 //
 // Las resoluciones van DE UNA EN UNA. Antes de Android 14, NsdManager
 // solo admite una resolveService a la vez: la segunda falla con
@@ -28,6 +31,8 @@ data class DiscoveredAgent(
     val port: Int,
     val os: String? = null,
     val version: String? = null,
+    /** SHA-256 of the agent's certificate (agents >= 0.3); lets a paired PC be recognised after an IP change. */
+    val fingerprint: String? = null,
 )
 
 class Discovery(private val context: Context) {
@@ -67,7 +72,7 @@ class Discovery(private val context: Context) {
         }
     }
 
-    @Suppress("DEPRECATION") // resolveService / host: replacements need API 34.
+    @Suppress("DEPRECATION") // resolveService: its replacement needs API 34.
     private suspend fun resolve(info: NsdServiceInfo): DiscoveredAgent? =
         suspendCancellableCoroutine { cont ->
             nsd.resolveService(info, object : NsdManager.ResolveListener {
@@ -76,23 +81,42 @@ class Discovery(private val context: Context) {
                 }
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                     if (!cont.isActive) return
-                    val host = serviceInfo.host?.hostAddress
+                    val host = pickAddress(serviceInfo)?.hostAddress
                     if (host == null) { cont.resume(null); return }
                     val txt = serviceInfo.attributes ?: emptyMap()
                     fun readTxt(key: String) = txt[key]?.toString(Charsets.UTF_8)
                     cont.resume(DiscoveredAgent(
-                        name    = serviceInfo.serviceName ?: host,
-                        host    = host,
-                        port    = serviceInfo.port,
-                        os      = readTxt("os"),
-                        version = readTxt("version"),
+                        name        = serviceInfo.serviceName ?: host,
+                        host        = host,
+                        port        = serviceInfo.port,
+                        os          = readTxt("os"),
+                        version     = readTxt("version"),
+                        fingerprint = readTxt("fp")?.takeIf { it.length == 64 },
                     ))
                 }
             })
         }
 
+    /**
+     * Prefers IPv4. The agent answers mDNS with A and AAAA records, and the first
+     * address Android hands back can be an IPv6 link-local one ("fe80::…%wlan0"):
+     * it needs a scope id that URLs cannot carry, so connecting to it fails.
+     */
+    @Suppress("DEPRECATION")
+    private fun pickAddress(info: NsdServiceInfo): InetAddress? {
+        val all: List<InetAddress> =
+            if (Build.VERSION.SDK_INT >= 34) info.hostAddresses else listOfNotNull(info.host)
+        return all.firstOrNull { it is Inet4Address } ?: all.firstOrNull { !it.isLinkLocalAddress } ?: all.firstOrNull()
+    }
+
     companion object {
         const val SERVICE_TYPE = "_pcremote._tcp."
         private const val RESOLVE_TIMEOUT_MS = 5_000L
     }
+}
+
+/** `wss://host:port/ws`, with IPv6 literals in brackets (without them OkHttp rejects the URL and throws). */
+fun agentWsUrl(host: String, port: Int): String {
+    val h = if (host.contains(':') && !host.startsWith("[")) "[${host.substringBefore('%')}]" else host
+    return "wss://$h:$port/ws"
 }

@@ -32,6 +32,10 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
     private readonly PerformanceCounter _cpuCounter = new("Processor", "% Processor Time", "_Total");
     private bool _cpuCounterPrimed;
 
+    // PerformanceCounter is not thread-safe, and two phones (or a request next to
+    // a stream) sample it from different threads.
+    private readonly object _cpuLock = new();
+
     // ── request/response ──────────────────────────────────
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
     {
@@ -70,11 +74,13 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
         }
 
         // Prime counter so the first value isn't 0.
-        if (!_cpuCounterPrimed)
+        bool prime;
+        lock (_cpuLock) prime = !_cpuCounterPrimed;
+        if (prime)
         {
-            _cpuCounter.NextValue();
+            lock (_cpuLock) _cpuCounter.NextValue();
             await Task.Delay(150, ct);
-            _cpuCounterPrimed = true;
+            lock (_cpuLock) _cpuCounterPrimed = true;
         }
 
         while (!ct.IsCancellationRequested)
@@ -112,13 +118,17 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
     // ── stats snapshot (shared by request/response and stream) ──
     private object SampleStats()
     {
-        if (!_cpuCounterPrimed)
+        double cpu;
+        lock (_cpuLock)
         {
-            _cpuCounter.NextValue();
-            Thread.Sleep(150);
-            _cpuCounterPrimed = true;
+            if (!_cpuCounterPrimed)
+            {
+                _cpuCounter.NextValue();
+                Thread.Sleep(150);
+                _cpuCounterPrimed = true;
+            }
+            cpu = Math.Round(_cpuCounter.NextValue(), 1);
         }
-        var cpu = Math.Round(_cpuCounter.NextValue(), 1);
         var mem = GetMemoryStatus();
         return new
         {

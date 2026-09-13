@@ -39,7 +39,7 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         {
             return Task.FromResult(req.Action switch
             {
-                "get"   => CommandResponse.Ok(req.Id, new { text = RunSta(() => WFClipboard.ContainsText() ? WFClipboard.GetText() : "") }),
+                "get"   => HandleGet(req),
                 "set"   => HandleSet(req),
                 "clear" => Clear(req),
                 _ => CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand, $"Unknown action '{req.Action}'"),
@@ -49,6 +49,21 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         {
             return Task.FromResult(CommandResponse.FromException(req.Id, ex));
         }
+    }
+
+    /// <summary>Same cap as set. A clipboard holding tens of MB of text would otherwise go out as one frame.</summary>
+    private const int MaxTextChars = 1_000_000;
+
+    private static CommandResponse HandleGet(CommandRequest req)
+    {
+        var text = RunSta(() => WFClipboard.ContainsText() ? WFClipboard.GetText() : "");
+        var truncated = text.Length > MaxTextChars;
+        return CommandResponse.Ok(req.Id, new
+        {
+            text = truncated ? SafeTruncate(text, MaxTextChars) : text,
+            length = text.Length,
+            truncated,
+        });
     }
 
     private static CommandResponse HandleSet(CommandRequest req)
@@ -112,7 +127,19 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         catch { return ""; }
     }
 
-    private static string TruncatePreview(string s) => s.Length > 4096 ? s[..4096] : s;
+    private static string TruncatePreview(string s) => SafeTruncate(s, 4096);
+
+    /// <summary>
+    /// Cuts without splitting a surrogate pair. `s[..n]` could end in half an
+    /// emoji; System.Text.Json refuses to write invalid UTF-16, so the send threw
+    /// and the watch stream died silently the first time that happened.
+    /// </summary>
+    private static string SafeTruncate(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        var cut = char.IsHighSurrogate(s[max - 1]) ? max - 1 : max;
+        return s[..cut];
+    }
 
     // ── STA marshaling ───────────────────────────────────────
     private static T RunSta<T>(Func<T> fn)

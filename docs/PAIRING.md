@@ -119,10 +119,11 @@ Lo que implementa el agente hoy:
   vale desde esa misma IP; repetir `pair_init` reutiliza el código vivo (y solo
   vuelve a notificar pasados 15 s). Un código generado en el panel vale desde
   cualquier IP, pero solo hay uno a la vez. Como mucho hay 5 códigos vivos.
-- **Bloqueo:** 3 códigos erróneos → la IP queda bloqueada 5 min, y pierde su
-  código pendiente.
-- **Antes de autenticar:** frames de 16 KB como máximo y 20 mensajes; después
-  se cierra el socket. Un `auth` fallido también cierra (1008, o 4001 si el
+- **Bloqueo:** 3 códigos erróneos dentro de 5 min (`LockoutSeconds`) → la IP
+  queda bloqueada 5 min y pierde su código pendiente. Los fallos más antiguos
+  que esa ventana dejan de contar.
+- **Antes de autenticar:** frames de 16 KB como máximo, 20 mensajes y
+  `CodeTtlSeconds` + 60 s de conexión; después se cierra el socket. Un `auth` fallido también cierra (1008, o 4001 si el
   dispositivo está revocado). Cada challenge es de un solo uso.
 - **Comandos:** cola por dominio de 256 peticiones; si se llena, el agente deja
   de leer del socket hasta que haya hueco. Frames de 4 MB como máximo y 16

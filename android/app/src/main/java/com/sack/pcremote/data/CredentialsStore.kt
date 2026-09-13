@@ -59,6 +59,18 @@ class CredentialsStore(private val context: Context) {
             .apply()
     }
 
+    /**
+     * Saves a freshly paired PC and drops older entries for the same PC (same
+     * certificate). Pairing again used to leave the old entry behind: two cards
+     * for one PC, one of them with a device the agent may since have revoked.
+     */
+    fun savePairing(c: AgentCredentials) {
+        listAll()
+            .filter { it.deviceId != c.deviceId && it.certFingerprintHex.equals(c.certFingerprintHex, ignoreCase = true) }
+            .forEach { delete(it.deviceId) }
+        save(c)
+    }
+
     fun load(deviceId: String): AgentCredentials? {
         val blob = prefs.getString(keyFor(deviceId), null) ?: return null
         return runCatching {

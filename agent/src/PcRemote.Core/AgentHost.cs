@@ -32,7 +32,9 @@ public static class AgentHost
         builder.Configuration.AddJsonFile(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
             optional: false,
-            reloadOnChange: true);
+            // Settings are bound once at startup; watching the file only cost a
+            // FileSystemWatcher and suggested that edits apply live. They do not.
+            reloadOnChange: false);
 
         // Every ILogger<T> goes to Serilog (file + the panel's ring buffer). Without
         // this the host kept its default console/debug providers: a WinExe has no

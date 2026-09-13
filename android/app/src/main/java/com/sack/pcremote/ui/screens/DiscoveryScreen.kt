@@ -49,12 +49,30 @@ fun DiscoveryScreen(
         paired = store.listAll()
         launch {
             discovery.scan().collect { agent ->
+                // Paired PC seen at a new address (DHCP gave it another IP): the
+                // saved host would never connect again, so follow the PC. Matched by
+                // certificate fingerprint, never by name — a name is trivial to fake,
+                // and the pinned certificate still guards the connection anyway.
+                val fp = agent.fingerprint
+                if (fp != null) {
+                    var changed = false
+                    store.listAll()
+                        .filter { it.certFingerprintHex.equals(fp, ignoreCase = true) &&
+                                  (it.agentHost != agent.host || it.agentPort != agent.port) }
+                        .forEach { store.save(it.copy(agentHost = agent.host, agentPort = agent.port)); changed = true }
+                    if (changed) paired = store.listAll()
+                }
                 if (found.none { it.host == agent.host && it.port == agent.port }) found.add(agent)
             }
         }
     }
 
-    val newAgents = found.filter { a -> paired.none { it.agentHost == a.host && it.agentPort == a.port } }
+    val newAgents = found.filter { a ->
+        paired.none {
+            (it.agentHost == a.host && it.agentPort == a.port) ||
+            (a.fingerprint != null && it.certFingerprintHex.equals(a.fingerprint, ignoreCase = true))
+        }
+    }
 
     fun scanQr() {
         val options = GmsBarcodeScannerOptions.Builder()

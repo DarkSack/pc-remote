@@ -37,7 +37,9 @@ public sealed class PairingService
     private readonly Dictionary<string, PairingCode> _byCode = new();
     private readonly Dictionary<string, PairingCode> _byOrigin = new();
     private readonly Dictionary<string, DateTimeOffset> _lastNotified = new();
-    private readonly Dictionary<string, int> _failedAttempts = new();
+    // Failures count only inside a window: without it, two typos last week plus one
+    // today locked a legitimate user out.
+    private readonly Dictionary<string, (int Count, DateTimeOffset First)> _failedAttempts = new();
     private readonly Dictionary<string, DateTimeOffset> _lockoutUntil = new();
 
     public PairingService(AgentSettings settings, ILogger<PairingService> logger)
@@ -157,9 +159,11 @@ public sealed class PairingService
 
     private void RegisterFailure(string clientIp, DateTimeOffset now)
     {
-        _failedAttempts.TryGetValue(clientIp, out var attempts);
-        attempts++;
-        if (attempts >= _settings.Pairing.MaxAttempts)
+        var window = TimeSpan.FromSeconds(_settings.Pairing.LockoutSeconds);
+        var attempts = _failedAttempts.TryGetValue(clientIp, out var prev) && now - prev.First < window
+            ? (Count: prev.Count + 1, prev.First)
+            : (Count: 1, First: now);
+        if (attempts.Count >= _settings.Pairing.MaxAttempts)
         {
             _failedAttempts.Remove(clientIp);
             _lockoutUntil[clientIp] = now.AddSeconds(_settings.Pairing.LockoutSeconds);
@@ -181,6 +185,10 @@ public sealed class PairingService
 
         foreach (var (ip, until) in _lockoutUntil.ToArray())
             if (until <= now) _lockoutUntil.Remove(ip);
+
+        var window = TimeSpan.FromSeconds(_settings.Pairing.LockoutSeconds);
+        foreach (var (ip, failures) in _failedAttempts.ToArray())
+            if (now - failures.First >= window) _failedAttempts.Remove(ip);
     }
 }
 

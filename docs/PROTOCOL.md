@@ -85,7 +85,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 
 | Código | Cuándo |
 |---|---|
-| 1008 | Autenticación fallida, o más de 20 mensajes sin autenticar. |
+| 1008 | Autenticación fallida, más de 20 mensajes sin autenticar, o sin autenticar tras `CodeTtlSeconds` + 60 s (180 s por defecto). |
 | 1009 | Frame demasiado grande: 16 KB antes de autenticar, 4 MB después. |
 | 4001 | Dispositivo revocado o borrado (en caliente o al intentar autenticar). **El cliente no debe reconectar.** |
 
@@ -152,11 +152,25 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 Nota: la app envía `mouseMove` y `mouseScroll` sin esperar respuesta, con `id`
 `fire_<n>`; el agente responde igual y el cliente descarta esas respuestas.
 
+Si la conexión se cae con un botón pulsado por `mouseDown`, el agente lo suelta.
+
+`PERMISSION_DENIED` (recoverable) cuando Windows rechaza la entrada: pantalla
+bloqueada, aviso de UAC o escritorio seguro. **Limitación:** la entrada dirigida a
+una ventana que se ejecuta como administrador (p. ej. el Administrador de tareas)
+se descarta en silencio y Windows no lo notifica; el agente, que corre sin
+elevación, no puede controlarla ni detectarlo.
+
+## Descubrimiento (mDNS)
+
+Servicio `_pcremote._tcp`, puerto WSS. Registros TXT: `hostname`, `os`,
+`version` y `fp` (SHA-256 del certificado TLS). La app usa `fp` para reconocer un
+PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
+
 ### `clipboard`
 
 | Action | Kind | Params | Data |
 |---|---|---|---|
-| `get` | request | — | `{ text }` |
+| `get` | request | — | `{ text, length, truncated }` — `text` va recortado a 1 000 000 caracteres |
 | `set` | request | `{ text }` (máx. 1 000 000 caracteres; `""` vacía) | `{ length }` |
 | `clear` | request | — | `{ cleared }` |
 | `watch` | subscribe | — | `{ text, length }` al suscribirse y en cada cambio; `text` va recortado a 4096 caracteres |

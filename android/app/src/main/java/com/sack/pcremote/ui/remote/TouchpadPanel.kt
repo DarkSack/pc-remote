@@ -63,15 +63,24 @@ fun TouchpadPanel(client: AgentClient) {
     val haptics = LocalHapticFeedback.current
     val touchSlop = LocalViewConfiguration.current.touchSlop
 
-    // Flush loop: turns accumulated deltas into at most ~60 messages a second.
-    LaunchedEffect(client) {
-        while (isActive) {
-            delay(FLUSH_MS)
+    // Pending movement goes out before any button event. Otherwise a click or the
+    // mouseUp ending a drag lands up to one flush interval (16 ms of finger travel)
+    // behind where the finger actually was.
+    fun flushMove() {
+        synchronized(acc) {
             val mx = acc.dx.toInt(); val my = acc.dy.toInt()
             if (mx != 0 || my != 0) {
                 acc.dx -= mx; acc.dy -= my
                 client.send("input", "mouseMove", buildJsonObject { put("dx", mx); put("dy", my) })
             }
+        }
+    }
+
+    // Flush loop: turns accumulated deltas into at most ~60 messages a second.
+    LaunchedEffect(client) {
+        while (isActive) {
+            delay(FLUSH_MS)
+            flushMove()
             val sy = acc.scrollY.toInt()
             if (abs(sy) >= 1) {
                 acc.scrollY -= sy
@@ -85,8 +94,10 @@ fun TouchpadPanel(client: AgentClient) {
         }
     }
 
-    fun click(button: String) =
+    fun click(button: String) {
+        flushMove()
         client.send("input", "mouseClick", buildJsonObject { put("button", button) })
+    }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(
@@ -133,18 +144,25 @@ fun TouchpadPanel(client: AgentClient) {
                                 // Mild acceleration: fast flicks cover the screen, slow moves stay precise.
                                 val speed = sqrt(move.x * move.x + move.y * move.y)
                                 val gain = sensitivity * (1f + minOf(speed, 40f) / 25f)
-                                acc.dx += move.x * gain
-                                acc.dy += move.y * gain
+                                synchronized(acc) {
+                                    acc.dx += move.x * gain
+                                    acc.dy += move.y * gain
+                                }
                             } else if (pressed.size >= 2 && travelled > touchSlop) {
                                 // Natural scrolling, like the phone: fingers up → content up.
-                                acc.scrollY += move.y * SCROLL_UNITS_PER_PX
-                                acc.scrollX -= move.x * SCROLL_UNITS_PER_PX
+                                synchronized(acc) {
+                                    acc.scrollY += move.y * SCROLL_UNITS_PER_PX
+                                    acc.scrollX -= move.x * SCROLL_UNITS_PER_PX
+                                }
                             }
                             event.changes.forEach { it.consume() }
                         }
 
                         when {
-                            dragging -> client.send("input", "mouseUp", buildJsonObject { put("button", "left") })
+                            dragging -> {
+                                flushMove()
+                                client.send("input", "mouseUp", buildJsonObject { put("button", "left") })
+                            }
                             travelled < touchSlop -> when (maxPointers) {
                                 1 -> click("left")
                                 2 -> click("right")

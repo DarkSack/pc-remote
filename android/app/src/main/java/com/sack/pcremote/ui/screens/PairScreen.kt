@@ -41,7 +41,7 @@ fun PairScreen(
             phase = p
             if (i != null) info = i
             if (p == PairPhase.DONE) {
-                client.lastResult?.let { store.save(it) }
+                client.lastResult?.let { store.savePairing(it) }
             }
         }
     }

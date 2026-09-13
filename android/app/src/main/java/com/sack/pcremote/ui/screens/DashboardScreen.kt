@@ -136,6 +136,11 @@ fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Uni
                     }
                     error?.let { Text(it, color = Danger, fontSize = 11.sp) }
                 }
+                // FAILED never retries by itself (revoked device, wrong certificate,
+                // unreachable address after a fix on the PC side): let the user try again.
+                if (state == ConnectionState.FAILED) {
+                    TextButton(onClick = { client.connect() }) { Text("Reintentar", color = Accent) }
+                }
             }
 
             Box(Modifier.weight(1f)) {

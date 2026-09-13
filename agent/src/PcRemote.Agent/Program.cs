@@ -43,7 +43,13 @@ internal static class Program
 
             using var tray = new TrayApplicationContext(host.Services, () =>
             {
-                try { host.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { /* best effort */ }
+                // Task.Run on purpose. This runs on the UI thread, inside the WinForms
+                // SynchronizationContext. Blocking it with GetResult() while the hosted
+                // services await (WebSocketServer.StopAsync awaits Kestrel without
+                // ConfigureAwait(false)) would post their continuations to the very
+                // thread that is blocked waiting for them: "Exit" would hang forever.
+                try { Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult(); }
+                catch { /* best effort */ }
             });
 
             Application.Run(tray);

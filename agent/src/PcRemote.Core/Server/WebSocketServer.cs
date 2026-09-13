@@ -216,6 +216,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _logger.LogInformation("Client connected from {Ip} (id={Id})", clientIp, tracked.Id);
 
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, tracked.Closing);
+        _ = CloseIfNotAuthenticatedAsync(conn, lifetime.Token);
         try
         {
             await HandleMessagesAsync(conn, lifetime.Token);
@@ -229,16 +230,47 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             lifetime.Cancel();
 
             foreach (var lane in conn.Lanes.Values) lane.Writer.TryComplete();
-            foreach (var kv in conn.Subscriptions) kv.Value.Cancel();
+            foreach (var kv in conn.Subscriptions)
+            {
+                // A stream worker may have finished and disposed its CTS between the
+                // snapshot and this call. Throwing here would skip the session and
+                // connection cleanup below.
+                try { kv.Value.Cancel(); } catch (ObjectDisposedException) { }
+            }
             try { await Task.WhenAll(conn.Workers); } catch { /* already logged per request */ }
 
             if (conn.Session is not null)
             {
                 _sessions.End(conn.Session.SessionId);
+                foreach (var aware in _router.Modules.Values.OfType<ISessionAware>())
+                {
+                    try { aware.OnSessionEnded(conn.Session); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "{Module} failed to clean up a session", aware.GetType().Name); }
+                }
                 _logger.LogInformation("Session {Session} ended", Short(conn.Session.SessionId));
             }
             _connections.Unregister(tracked.Id);
         }
+    }
+
+    /// <summary>
+    /// A socket that never authenticates is dropped. Without this, any host on the
+    /// LAN could open connections and leave them idle forever, each holding a
+    /// socket and a buffer. The window covers manual pairing: the user has to read
+    /// the code on the PC and type it, which the code TTL already bounds.
+    /// </summary>
+    private async Task CloseIfNotAuthenticatedAsync(Connection conn, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(_settings.Pairing.CodeTtlSeconds + 60), ct);
+            if (conn.Session is null)
+            {
+                _logger.LogInformation("Closing {Ip}: not authenticated in time", conn.ClientIp);
+                await conn.Tracked.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication timeout");
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task HandleMessagesAsync(Connection conn, CancellationToken ct)

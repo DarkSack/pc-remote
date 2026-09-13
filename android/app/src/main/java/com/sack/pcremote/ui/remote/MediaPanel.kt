@@ -115,7 +115,10 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             val muted = now.mute == true
-            IconButton(onClick = { client.send("media", "volumeMute", buildJsonObject { put("mute", !muted) }) }) {
+            IconButton(onClick = {
+                client.send("media", "volumeMute", buildJsonObject { put("mute", !muted) })
+                now = now.copy(mute = !muted)
+            }) {
                 Icon(if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                      contentDescription = if (muted) "Quitar silencio" else "Silenciar",
                      tint = if (muted) Danger else Accent)
@@ -124,7 +127,12 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
                 value = dragVolume ?: (now.volume ?: 0).toFloat(),
                 onValueChange = { dragVolume = it },
                 onValueChangeFinished = {
-                    dragVolume?.let { client.send("media", "volumeSet", buildJsonObject { put("volume", it.toInt()) }) }
+                    dragVolume?.let {
+                        client.send("media", "volumeSet", buildJsonObject { put("volume", it.toInt()) })
+                        // Keep the new value until the next stream tick confirms it (up to a
+                        // second later); otherwise the slider jumps back to the old volume.
+                        now = now.copy(volume = it.toInt())
+                    }
                     dragVolume = null
                 },
                 valueRange = 0f..100f,

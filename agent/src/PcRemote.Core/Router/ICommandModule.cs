@@ -19,6 +19,15 @@ public interface ICommandModule
     Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct);
 }
 
+/// <summary>
+/// Optional: modules that keep per-session state (e.g. a mouse button held for a
+/// drag) implement this to clean it up when the connection goes away.
+/// </summary>
+public interface ISessionAware
+{
+    void OnSessionEnded(ClientSession session);
+}
+
 public sealed record CommandDescriptor(
     string Action,
     string Description,

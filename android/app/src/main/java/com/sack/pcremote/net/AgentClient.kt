@@ -73,7 +73,10 @@ class AgentClient(private val creds: AgentCredentials) {
     private val backoff = longArrayOf(1000, 2000, 4000, 8000, 16000, 30000)
 
     fun connect() {
-        if (_state.value == ConnectionState.CONNECTED || _state.value == ConnectionState.CONNECTING) return
+        // Only from a resting state: calling it while connecting, authenticating or
+        // waiting to reconnect would open a second socket next to the first.
+        if (_state.value != ConnectionState.DISCONNECTED && _state.value != ConnectionState.FAILED) return
+        backoffIndex = 0
         openSocket(initial = true)
     }
 
@@ -101,10 +104,12 @@ class AgentClient(private val creds: AgentCredentials) {
     private fun openSocket(initial: Boolean) {
         _state.value = if (initial) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
 
+        // A malformed saved host, or an IPv6 literal without brackets, makes
+        // Request.Builder.url throw. Uncaught, that crashed the app from the UI
+        // thread; now it is a visible, final error.
+        val req = runCatching { Request.Builder().url(agentWsUrl(creds.agentHost, creds.agentPort)).build() }
+            .getOrElse { fail("Dirección del PC no válida: ${creds.agentHost}"); return }
         val client = buildOkHttp(creds.certFingerprintHex)
-        val req = Request.Builder()
-            .url("wss://${creds.agentHost}:${creds.agentPort}/ws")
-            .build()
 
         ws = client.newWebSocket(req, listener)
         client.dispatcher.executorService.shutdown()   // don't keep pool alive
@@ -337,7 +342,8 @@ class PairingClient(
             .sslSocketFactory(sslCtx.socketFactory, trustAll[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
             .build()
-        val req = Request.Builder().url("wss://$host:$port/ws").build()
+        val req = runCatching { Request.Builder().url(agentWsUrl(host, port)).build() }
+            .getOrElse { onPhase(PairPhase.ERROR, "Dirección no válida: $host"); return }
 
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {

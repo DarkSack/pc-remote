@@ -31,7 +31,7 @@ fun PcRemoteApp(nav: NavHostController, store: CredentialsStore, discovery: Disc
                 store     = store,
                 discovery = discovery,
                 onPair    = { agent ->
-                    nav.navigate("pair/${agent.host}/${agent.port}/${enc(agent.name)}")
+                    nav.navigate("pair/${enc(agent.host)}/${agent.port}/${enc(agent.name)}")
                 },
                 onPairQr  = { qr ->
                     nav.navigate("pair/${enc(qr.host)}/${qr.port}/${enc(qr.name)}?code=${qr.code}&fp=${qr.fp}")

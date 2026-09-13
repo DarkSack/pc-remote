@@ -24,7 +24,11 @@ public sealed class AgentDatabase
         {
             DataSource = path,
             Mode       = SqliteOpenMode.ReadWriteCreate,
-            Cache      = SqliteCacheMode.Shared,
+            // Private cache (the default). Shared cache swaps SQLite's file locks for
+            // table locks, so the audit writer's batch transaction and an auth
+            // updating last_seen_at could block each other; WAL already lets readers
+            // and the single writer proceed without it.
+            Cache      = SqliteCacheMode.Private,
         }.ToString();
     }
 

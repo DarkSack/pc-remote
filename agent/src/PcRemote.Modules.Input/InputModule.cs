@@ -22,7 +22,7 @@ namespace PcRemote.Modules.Input;
 //     via SendInput con KEYEVENTF_UNICODE (no depende del layout).
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class InputModule : ICommandModule
+public sealed class InputModule : ICommandModule, ISessionAware
 {
     public string Domain => "input";
 
@@ -45,9 +45,9 @@ public sealed class InputModule : ICommandModule
             return Task.FromResult(req.Action switch
             {
                 "mouseMove"   => HandleMouseMove(req),
-                "mouseClick"  => HandleMouseClick(req),
-                "mouseDown"   => HandleMouseButton(req, down: true),
-                "mouseUp"     => HandleMouseButton(req, down: false),
+                "mouseClick"  => HandleMouseClick(req, session),
+                "mouseDown"   => HandleMouseButton(req, session, down: true),
+                "mouseUp"     => HandleMouseButton(req, session, down: false),
                 "mouseScroll" => HandleMouseScroll(req),
                 "mousePos"    => HandleMousePos(req),
                 "keyPress"    => HandleKeyPress(req),
@@ -89,7 +89,7 @@ public sealed class InputModule : ICommandModule
                 type = InputNative.INPUT_MOUSE,
                 U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dx = dx, dy = dy, dwFlags = InputNative.MOUSEEVENTF_MOVE } },
             };
-            InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+            if (!Send(input)) return Blocked(req.Id);
             return CommandResponse.Ok(req.Id, new { moved = true });
         }
     }
@@ -110,7 +110,7 @@ public sealed class InputModule : ICommandModule
     /// hold → mouseDown, move, lift → mouseUp. A client that dies mid-drag leaves
     /// the button held; the next click releases it, as with a real mouse.
     /// </summary>
-    private static CommandResponse HandleMouseButton(CommandRequest req, bool down)
+    private CommandResponse HandleMouseButton(CommandRequest req, ClientSession session, bool down)
     {
         var button = ButtonParam(req.Params ?? default);
         var flags = ButtonFlags(button);
@@ -122,11 +122,12 @@ public sealed class InputModule : ICommandModule
             type = InputNative.INPUT_MOUSE,
             U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = down ? flags.down : flags.up } },
         };
-        InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        if (!Send(input)) return Blocked(req.Id);
+        TrackHeld(session, button, down);
         return CommandResponse.Ok(req.Id, new { button, down });
     }
 
-    private static CommandResponse HandleMouseClick(CommandRequest req)
+    private CommandResponse HandleMouseClick(CommandRequest req, ClientSession session)
     {
         var p = req.Params ?? default;
         var button = ButtonParam(p);
@@ -142,7 +143,9 @@ public sealed class InputModule : ICommandModule
             events.Add(new InputNative.INPUT { type = InputNative.INPUT_MOUSE, U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = flags.down } } });
             events.Add(new InputNative.INPUT { type = InputNative.INPUT_MOUSE, U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = flags.up } } });
         }
-        InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        if (!Send(events.ToArray())) return Blocked(req.Id);
+        // A full click also releases a button a dropped drag may have left held.
+        TrackHeld(session, button, down: false);
         return CommandResponse.Ok(req.Id, new { clicked = button, count });
     }
 
@@ -172,7 +175,7 @@ public sealed class InputModule : ICommandModule
                 },
             },
         };
-        InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        if (!Send(input)) return Blocked(req.Id);
         return CommandResponse.Ok(req.Id, new { scrolled = amount });
     }
 
@@ -201,7 +204,7 @@ public sealed class InputModule : ICommandModule
         for (int i = vks.Length - 1; i >= 0; i--)
             events.Add(KeyEvent(vks[i], InputNative.KEYEVENTF_KEYUP));
 
-        InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        if (!Send(events.ToArray())) return Blocked(req.Id);
         return CommandResponse.Ok(req.Id, new { pressed = keys });
     }
 
@@ -228,12 +231,58 @@ public sealed class InputModule : ICommandModule
             events.Add(UnicodeEvent(ch, 0));
             events.Add(UnicodeEvent(ch, InputNative.KEYEVENTF_KEYUP));
         }
-        if (events.Count > 0)
-            InputNative.SendInput((uint)events.Count, events.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        if (!Send(events.ToArray())) return Blocked(req.Id);
         return CommandResponse.Ok(req.Id, new { typed = text.Length });
     }
 
     // ── Helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// SendInput returns how many events it inserted. 0 means Windows refused them:
+    /// the secure desktop (UAC prompt, Ctrl+Alt+Del) or a locked workstation.
+    /// It does NOT reliably report UIPI blocking: input aimed at a window running
+    /// as administrator (e.g. Task Manager for an admin user) is silently dropped
+    /// while SendInput still reports success. An agent without elevation cannot
+    /// control those windows, and cannot even detect it.
+    /// </summary>
+    private static bool Send(params InputNative.INPUT[] events) =>
+        events.Length == 0 ||
+        InputNative.SendInput((uint)events.Length, events, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>()) == events.Length;
+
+    private static CommandResponse Blocked(string id) =>
+        CommandResponse.Fail(id, ErrorCodes.PermissionDenied,
+            "Windows rejected the input (locked screen, UAC prompt or secure desktop).", recoverable: true);
+
+    // Buttons pressed with mouseDown and not yet released, per session. If the
+    // phone disconnects mid-drag (Wi-Fi drop, app killed), the button would stay
+    // held in Windows and every later physical mouse move would drag something.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<string>> _held = new();
+
+    private void TrackHeld(ClientSession session, string button, bool down)
+    {
+        var set = _held.GetOrAdd(session.SessionId, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        lock (set)
+        {
+            if (down) set.Add(button); else set.Remove(button);
+        }
+    }
+
+    public void OnSessionEnded(ClientSession session)
+    {
+        if (!_held.TryRemove(session.SessionId, out var set)) return;
+        string[] buttons;
+        lock (set) buttons = set.ToArray();
+        foreach (var button in buttons)
+        {
+            var flags = ButtonFlags(button);
+            if (flags.up == 0) continue;
+            Send(new InputNative.INPUT
+            {
+                type = InputNative.INPUT_MOUSE,
+                U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = flags.up } },
+            });
+        }
+    }
 
     private static int ClampDelta(int v) => Math.Clamp(v, -2000, 2000);
 

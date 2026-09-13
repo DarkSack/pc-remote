@@ -8,7 +8,7 @@ namespace PcRemote.Core.Discovery;
 /// <summary>
 /// Publishes the agent as an mDNS service so mobile clients can auto-discover it.
 /// Service type: _pcremote._tcp
-/// TXT records: hostname, os, version.
+/// TXT records: hostname, os, version, fp (SHA-256 of the TLS certificate).
 /// </summary>
 public sealed class MdnsPublisher : IHostedService, IDisposable
 {
@@ -17,10 +17,16 @@ public sealed class MdnsPublisher : IHostedService, IDisposable
     private MulticastService? _mdns;
     private ServiceDiscovery? _discovery;
 
-    public MdnsPublisher(AgentSettings settings, ILogger<MdnsPublisher> logger)
+    private readonly System.Security.Cryptography.X509Certificates.X509Certificate2 _certificate;
+
+    public MdnsPublisher(
+        AgentSettings settings,
+        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate,
+        ILogger<MdnsPublisher> logger)
     {
-        _settings = settings;
-        _logger   = logger;
+        _settings    = settings;
+        _certificate = certificate;
+        _logger      = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -38,6 +44,11 @@ public sealed class MdnsPublisher : IHostedService, IDisposable
             profile.AddProperty("hostname", Environment.MachineName);
             profile.AddProperty("os", "Windows");
             profile.AddProperty("version", GetAgentVersion());
+            // The certificate fingerprint identifies THIS agent across IP changes: a
+            // paired phone matches it to update the address it saved when DHCP hands
+            // the PC a new one. It is not a secret (any client sees it in the TLS
+            // handshake) and says nothing that lets anyone authenticate.
+            profile.AddProperty("fp", PcRemote.Core.Security.CertificateProvider.GetFingerprint(_certificate));
 
             _discovery.Advertise(profile);
             _mdns.Start();

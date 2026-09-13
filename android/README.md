@@ -31,7 +31,10 @@ con la New Architecture.
 - ✅ **Wake-on-LAN**: botón de encendido en la lista (aparece tras la primera
   conexión, cuando la app ya conoce la MAC del PC)
 - ✅ Reconexión con backoff; no reintenta si el PC revocó el dispositivo o
-  cambió de certificado
+  cambió de certificado (botón "Reintentar")
+- ✅ Si el PC cambia de IP, la app lo reconoce por mDNS (huella del
+  certificado) y actualiza la dirección guardada
+- ✅ Volver a emparejar un PC sustituye la entrada anterior en vez de duplicarla
 - ⚠️ Todo lo anterior compila y la lógica pura tiene tests, pero **no se ha
   probado aún en un móvil real**
 
