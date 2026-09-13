@@ -1,6 +1,6 @@
 using System.Runtime.Versioning;
 using System.Windows.Forms;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using PcRemote.Agent.Tray;
 using PcRemote.Core;
@@ -20,12 +20,15 @@ internal static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        var host = AgentHost.Build();
+        // Serilog first: AgentHost hands Log.Logger to the host's logging, so it has
+        // to be the real logger before Build(), not the silent default.
+        // Wired from appsettings.json, plus the ring buffer the panel serves at /api/logs.
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
+            .Build();
 
-        // Serilog is wired from appsettings.json (Serilog.Settings.Configuration).
-        // Also add the in-memory ring buffer sink so the web panel can serve /api/logs.
         Log.Logger = new LoggerConfiguration()
-            .ReadFrom.Configuration(host.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>())
+            .ReadFrom.Configuration(configuration)
             .WriteTo.Sink(InMemoryLogSink.Instance)
             .CreateLogger();
 
@@ -33,14 +36,13 @@ internal static class Program
         {
             Log.Information("Agent starting…");
 
+            var host = AgentHost.Build();
+
             // Start the .NET Host in the background; tray UI runs on the STA main thread.
-            var cts       = new CancellationTokenSource();
-            var hostTask  = host.StartAsync(cts.Token);
-            hostTask.GetAwaiter().GetResult();
+            host.StartAsync().GetAwaiter().GetResult();
 
             using var tray = new TrayApplicationContext(host.Services, () =>
             {
-                cts.Cancel();
                 try { host.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); } catch { /* best effort */ }
             });
 

@@ -72,14 +72,17 @@ propia llave criptográfica.
 
 ## Revocación
 
-Desde el tray → "Manage devices…" → seleccionar → "Revoke".
-El agente:
+Desde el tray → "Manage devices…", o desde el panel web (Revocar / Borrar).
+Los dos pasan por `DeviceAdmin`:
 
-1. `UPDATE devices SET revoked=1 WHERE id=?`
-2. Busca sesiones activas de ese `deviceId` y cierra los sockets con
-   código `4001 Device revoked`.
-3. Emite evento `event { domain:"device", action:"revoked" }` a otras
-   sesiones (opcional, para auditoría en múltiples clientes).
+1. `UPDATE devices SET revoked=1 WHERE id=?` (o `DELETE` si es borrar).
+2. Termina sus sesiones: cualquier comando ya en cola comprueba la sesión
+   antes de ejecutarse y no llega a correr.
+3. Cierra sus sockets con código `4001 Device revoked`. La app no se
+   reconecta al recibir 4001.
+
+Pendiente: emitir `event { domain:"device", action:"revoked" }` a otras
+sesiones.
 
 ## Almacenamiento
 
@@ -104,6 +107,24 @@ CREATE TABLE devices (
 
 ## Rate limiting
 
-- Pairing: 3 intentos de código antes de bloqueo de 5 min por IP+deviceName.
-- Comandos: 100 requests/segundo por sesión.
-- Auth challenge: 10 intentos/minuto por IP.
+Lo que implementa el agente hoy:
+
+- **Códigos ligados a quien los pide.** Un código pedido con `pair_init` solo
+  vale desde esa misma IP; repetir `pair_init` reutiliza el código vivo (y solo
+  vuelve a notificar pasados 15 s). Un código generado en el panel vale desde
+  cualquier IP, pero solo hay uno a la vez. Como mucho hay 5 códigos vivos.
+- **Bloqueo:** 3 códigos erróneos → la IP queda bloqueada 5 min, y pierde su
+  código pendiente.
+- **Antes de autenticar:** frames de 16 KB como máximo y 20 mensajes; después
+  se cierra el socket. Un `auth` fallido también cierra (1008, o 4001 si el
+  dispositivo está revocado). Cada challenge es de un solo uso.
+- **Comandos:** cola por dominio de 256 peticiones; si se llena, el agente deja
+  de leer del socket hasta que haya hueco. Frames de 4 MB como máximo y 16
+  suscripciones por conexión.
+
+## Panel web
+
+Loopback, sin login, pero no abierto a cualquier web del navegador: exige
+`Host` de loopback (DNS rebinding) y rechaza peticiones con
+`Sec-Fetch-Site`/`Origin` de otro sitio (CSRF). `/ws` solo se sirve en el
+puerto WSS.

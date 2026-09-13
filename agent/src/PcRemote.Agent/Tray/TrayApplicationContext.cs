@@ -148,9 +148,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return menu;
     }
 
-    private void ShowDevicesDialog(DeviceRepository devices)
+    private async void ShowDevicesDialog(DeviceRepository devices)
     {
-        var sessions = _services.GetRequiredService<SessionManager>();
+        var admin = _services.GetRequiredService<DeviceAdmin>();
         var list = devices.List();
         if (list.Count == 0)
         {
@@ -187,10 +187,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
             MessageBox.Show("No device with that ID.", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        devices.Revoke(d.Id);
-        var killed = sessions.EndAllForDevice(d.Id);
+        // Revoke also closes the device's live connection; before, the row was
+        // marked revoked but an already-authenticated phone kept working.
+        int closed;
+        try
+        {
+            closed = await admin.RevokeAsync(d.Id);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not revoke '{d.Name}': {ex.Message}", "PC Remote",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
         MessageBox.Show(
-            $"Revoked '{d.Name}'. Killed {killed.Count} active session(s).",
+            $"Revoked '{d.Name}'. Closed {closed} live connection(s).",
             "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 

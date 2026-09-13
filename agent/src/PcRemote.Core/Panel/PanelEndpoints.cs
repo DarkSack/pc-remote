@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -9,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
+using PcRemote.Core.Security;
 using PcRemote.Core.Server;
 using QRCoder;
 
@@ -18,18 +18,23 @@ namespace PcRemote.Core.Panel;
 // HTTP endpoints del panel de administración.
 //
 // Vive en un puerto loopback separado (por defecto 47810) — nunca
-// accesible desde la red. Sin auth porque:
+// accesible desde la red. Sin login porque:
 //   1) Loopback-only: nadie externo puede alcanzarlo.
 //   2) Si alguien tiene acceso local al PC, ya tiene el agente entero.
+//
+// PERO "loopback" no significa "solo yo": cualquier web abierta en el
+// navegador de este PC puede lanzar peticiones a localhost. Por eso
+// UsePanelGuard exige Host de loopback (corta el DNS rebinding) y
+// rechaza peticiones cross-site (corta el CSRF).
 //
 // Endpoints:
 //   GET  /              → HTML del panel (embedded resource)
 //   GET  /api/status    → estado del agente
 //   GET  /api/devices   → dispositivos emparejados (SQLite)
-//   DELETE /api/devices/:id → revoca (soft delete)
+//   DELETE /api/devices/:id?hard=bool → revoca o borra, y corta la conexión viva
 //   GET  /api/connections → sesiones WS activas
 //   POST /api/pair/start  → genera código 6 dígitos + payload QR
-//   GET  /api/pair/qr?data=... → PNG del QR (base64 data URL)
+//   GET  /api/pair/qr?data=... → PNG del QR
 //   GET  /api/logs      → últimas líneas del ring buffer
 // ══════════════════════════════════════════════════════════════
 public static class PanelEndpoints
@@ -38,6 +43,62 @@ public static class PanelEndpoints
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    private static readonly HashSet<string> LoopbackHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "localhost", "127.0.0.1", "[::1]",
+    };
+
+    /// <summary>
+    /// Rejects panel requests that did not come from the panel itself.
+    ///
+    /// - Host header: a page on evil.example whose DNS then flips to 127.0.0.1
+    ///   (DNS rebinding) reaches us as same-origin for the browser, but its Host
+    ///   still says evil.example. Only loopback names are accepted.
+    /// - Sec-Fetch-Site / Origin: a cross-site page can still fire a blind
+    ///   POST /api/pair/start or load resources. Browsers label those; requests
+    ///   typed in the address bar or made by the panel are "none" / "same-origin".
+    ///   Tools like curl send neither header and are allowed (they are local).
+    /// </summary>
+    public static void UsePanelGuard(this IApplicationBuilder app, int panelPort)
+    {
+        app.Use(async (ctx, next) =>
+        {
+            if (ctx.Connection.LocalPort != panelPort)
+            {
+                await next();
+                return;
+            }
+
+            if (!LoopbackHosts.Contains(ctx.Request.Host.Host) ||
+                (ctx.Request.Host.Port is { } port && port != panelPort))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            var fetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString();
+            if (fetchSite.Length > 0 && fetchSite is not ("same-origin" or "none"))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            var origin = ctx.Request.Headers.Origin.ToString();
+            if (origin.Length > 0 &&
+                !(Uri.TryCreate(origin, UriKind.Absolute, out var o) &&
+                  LoopbackHosts.Contains(o.Host is "::1" ? "[::1]" : o.Host) &&
+                  o.Port == panelPort))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            ctx.Response.Headers["X-Frame-Options"] = "DENY";
+            ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            await next();
+        });
+    }
 
     public static void MapPanel(this IEndpointRouteBuilder app, int panelPort)
     {
@@ -61,7 +122,7 @@ public static class PanelEndpoints
                 wsPort         = s.WebSocket.Port,
                 wsBindAddress  = s.WebSocket.BindAddress,
                 mdnsService    = s.Discovery.MdnsServiceType,
-                certFingerprint = cert.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256).ToLowerInvariant(),
+                certFingerprint = CertificateProvider.GetFingerprint(cert),
                 pairing        = new
                 {
                     codeTtlSec    = s.Pairing.CodeTtlSeconds,
@@ -87,12 +148,14 @@ public static class PanelEndpoints
             return Results.Json(devices, Json);
         });
 
-        app.MapDelete("/api/devices/{id}", (HttpContext ctx, DeviceRepository repo, string id, bool hard) =>
+        // `hard` is optional: as a plain bool, a DELETE without ?hard= was a 400.
+        app.MapDelete("/api/devices/{id}", async (HttpContext ctx, DeviceAdmin admin, string id, bool? hard) =>
         {
             if (!Match(ctx)) return Results.NotFound();
-            if (hard) repo.Delete(id);
-            else repo.Revoke(id);
-            return Results.Ok(new { id, hardDeleted = hard });
+            var closed = hard == true
+                ? await admin.DeleteAsync(id)
+                : await admin.RevokeAsync(id);
+            return Results.Ok(new { id, hardDeleted = hard == true, closedConnections = closed });
         });
 
         app.MapGet("/api/connections", (HttpContext ctx, ConnectionManager conns) =>
@@ -104,6 +167,7 @@ public static class PanelEndpoints
                 clientIp    = c.ClientIp,
                 connectedAt = c.ConnectedAt,
                 state       = c.Socket.State.ToString(),
+                deviceId    = c.DeviceId,
             });
             return Results.Json(items, Json);
         });
@@ -111,7 +175,7 @@ public static class PanelEndpoints
         app.MapPost("/api/pair/start", (HttpContext ctx, PairingService pairing, AgentSettings s, X509Certificate2 cert) =>
         {
             if (!Match(ctx)) return Results.NotFound();
-            var code = pairing.IssueCode("panel");
+            var code = pairing.IssuePanelCode();
 
             // Payload que va dentro del QR — el móvil lo parsea y auto-rellena.
             var payload = new
@@ -120,7 +184,7 @@ public static class PanelEndpoints
                 host = GuessLanIp(),
                 port = s.WebSocket.Port,
                 code = code.Code,
-                fp   = cert.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256).ToLowerInvariant(),
+                fp   = CertificateProvider.GetFingerprint(cert),
                 name = Environment.MachineName,
             };
             var qrData = "pcremote://pair?" + JsonSerializer.Serialize(payload, Json);
@@ -138,6 +202,7 @@ public static class PanelEndpoints
         app.MapGet("/api/pair/qr", (HttpContext ctx, string data) =>
         {
             if (!Match(ctx)) return Results.NotFound();
+            if (data.Length > 1024) return Results.BadRequest();
             using var gen = new QRCodeGenerator();
             using var qr  = gen.CreateQrCode(data, QRCodeGenerator.ECCLevel.M);
             using var png = new PngByteQRCode(qr);
@@ -149,7 +214,7 @@ public static class PanelEndpoints
         {
             if (!Match(ctx)) return Results.NotFound();
             var lines = InMemoryLogSink.Instance.Snapshot();
-            var take = limit ?? 100;
+            var take = Math.Clamp(limit ?? 100, 1, 500);
             var slice = lines.Count > take ? lines.Skip(lines.Count - take).ToArray() : lines.ToArray();
             return Results.Json(slice, Json);
         });
@@ -170,6 +235,10 @@ public static class PanelEndpoints
         }
         using var stream = asm.GetManifestResourceStream(resource)!;
         ctx.Response.ContentType = "text/html; charset=utf-8";
+        // Everything the panel needs is inline; nothing else may run in it.
+        ctx.Response.Headers["Content-Security-Policy"] =
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+            "img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
         await stream.CopyToAsync(ctx.Response.Body);
     }
 

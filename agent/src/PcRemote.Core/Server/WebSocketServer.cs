@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -18,6 +19,7 @@ using PcRemote.Core.Panel;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
 using PcRemote.Core.Security;
+using Serilog;
 
 namespace PcRemote.Core.Server;
 
@@ -25,15 +27,38 @@ namespace PcRemote.Core.Server;
 /// Hosts the WebSocket server on Kestrel with WSS. Handles bootstrap
 /// (pair_init / pair_confirm) and authenticated sessions (auth_challenge / auth)
 /// then routes command requests through CommandRouter.
+///
+/// Concurrency model, per connection:
+///   - ONE receive loop reads frames in order.
+///   - Requests go to a lane per domain: commands of the same domain keep their
+///     order (mouse moves must not overtake each other), different domains run
+///     in parallel (a slow <c>applications.list</c> no longer freezes the mouse).
+///   - Every write goes through <see cref="TrackedConnection.SendAsync"/>, which
+///     serialises sends, as the WebSocket contract requires.
 /// </summary>
 public sealed class WebSocketServer : IHostedService, IAsyncDisposable
 {
+    /// <summary>Largest frame accepted before authenticating. Bootstrap messages are tiny.</summary>
+    private const int MaxUnauthenticatedMessageBytes = 16 * 1024;
+
+    /// <summary>Largest frame once authenticated. clipboard.set allows 1M chars (up to ~3 MB of UTF-8 + escaping).</summary>
+    private const int MaxMessageBytes = 4 * 1024 * 1024;
+
+    /// <summary>Messages tolerated without authenticating before the socket is dropped.</summary>
+    private const int MaxUnauthenticatedMessages = 20;
+
+    /// <summary>Queued requests per domain; beyond this the receive loop waits (backpressure).</summary>
+    private const int LaneCapacity = 256;
+
+    private const int MaxSubscriptionsPerConnection = 16;
+
     private readonly AgentSettings     _settings;
     private readonly X509Certificate2  _certificate;
     private readonly ConnectionManager _connections;
     private readonly PairingService    _pairing;
     private readonly SessionManager    _sessions;
     private readonly DeviceRepository  _devices;
+    private readonly DeviceAdmin       _deviceAdmin;
     private readonly CommandRouter     _router;
     private readonly ILogger<WebSocketServer> _logger;
 
@@ -52,6 +77,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         PairingService pairing,
         SessionManager sessions,
         DeviceRepository devices,
+        DeviceAdmin deviceAdmin,
         CommandRouter router,
         ILogger<WebSocketServer> logger)
     {
@@ -61,6 +87,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _pairing     = pairing;
         _sessions    = sessions;
         _devices     = devices;
+        _deviceAdmin = deviceAdmin;
         _router      = router;
         _logger      = logger;
     }
@@ -68,6 +95,11 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var builder = WebApplication.CreateBuilder();
+
+        // This is a second host inside the agent. Without this its logs (Kestrel,
+        // ASP.NET) went to the default console provider, which a WinExe never shows.
+        builder.Logging.ClearProviders();
+        builder.Logging.AddSerilog(Log.Logger, dispose: false);
 
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
@@ -97,8 +129,15 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_connections);
         builder.Services.AddSingleton(_pairing);
         builder.Services.AddSingleton(_devices);
+        builder.Services.AddSingleton(_deviceAdmin);
 
         _app = builder.Build();
+
+        if (_settings.Panel.Enabled)
+        {
+            _app.UsePanelGuard(_settings.Panel.Port);
+        }
+
         _app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(_settings.Session.PingIntervalSeconds),
@@ -131,8 +170,35 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     // ══════════════════════════════════════════════════════════════
     // Connection lifecycle
     // ══════════════════════════════════════════════════════════════
+
+    /// <summary>Everything that belongs to one socket.</summary>
+    private sealed class Connection(TrackedConnection tracked)
+    {
+        public TrackedConnection Tracked { get; } = tracked;
+        public string ClientIp => Tracked.ClientIp;
+
+        public ClientSession? Session;
+        public byte[]? PendingNonce;
+        public int UnauthenticatedMessages;
+
+        public readonly ConcurrentDictionary<string, CancellationTokenSource> Subscriptions = new();
+
+        // Only touched by the receive loop, so no locking.
+        public readonly Dictionary<string, Channel<CommandRequest>> Lanes = new(StringComparer.OrdinalIgnoreCase);
+        public readonly List<Task> Workers = new();
+    }
+
     private async Task HandleWebSocket(HttpContext ctx)
     {
+        // The route is mapped on the app, so it would also answer on the loopback
+        // panel port — as plain ws:// that any web page in the browser may open.
+        // The phone protocol lives on the TLS port only.
+        if (ctx.Connection.LocalPort != _settings.WebSocket.Port)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         if (!ctx.WebSockets.IsWebSocketRequest)
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -142,12 +208,13 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         var socket   = await ctx.WebSockets.AcceptWebSocketAsync();
         var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var tracked  = _connections.Register(socket, clientIp);
+        var conn     = new Connection(tracked);
         _logger.LogInformation("Client connected from {Ip} (id={Id})", clientIp, tracked.Id);
 
-        ClientSession? session = null;
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, tracked.Closing);
         try
         {
-            await HandleMessagesAsync(socket, clientIp, s => session = s, ctx.RequestAborted);
+            await HandleMessagesAsync(conn, lifetime.Token);
         }
         catch (Exception ex) when (ex is OperationCanceledException or WebSocketException)
         {
@@ -155,157 +222,178 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         }
         finally
         {
-            if (session is not null)
+            lifetime.Cancel();
+
+            foreach (var lane in conn.Lanes.Values) lane.Writer.TryComplete();
+            foreach (var kv in conn.Subscriptions) kv.Value.Cancel();
+            try { await Task.WhenAll(conn.Workers); } catch { /* already logged per request */ }
+
+            if (conn.Session is not null)
             {
-                _sessions.End(session.SessionId);
-                _logger.LogInformation("Session {Session} ended", session.SessionId[..8]);
+                _sessions.End(conn.Session.SessionId);
+                _logger.LogInformation("Session {Session} ended", Short(conn.Session.SessionId));
             }
             _connections.Unregister(tracked.Id);
         }
     }
 
-    private async Task HandleMessagesAsync(
-        WebSocket socket,
-        string clientIp,
-        Action<ClientSession> onSessionEstablished,
-        CancellationToken ct)
+    private async Task HandleMessagesAsync(Connection conn, CancellationToken ct)
     {
-        ClientSession? session = null;
-        byte[] pendingNonce = Array.Empty<byte>();
-        var subscriptions = new ConcurrentDictionary<string, CancellationTokenSource>();
+        var socket = conn.Tracked.Socket;
+        var buffer = new byte[8 * 1024];
 
-        try
+        while (socket.State == WebSocketState.Open)
         {
-            while (socket.State == WebSocketState.Open)
+            var limit = conn.Session is null ? MaxUnauthenticatedMessageBytes : MaxMessageBytes;
+            var raw = await ReceiveTextAsync(conn.Tracked, buffer, limit, ct);
+            if (raw is null) break;
+
+            if (conn.Session is null && ++conn.UnauthenticatedMessages > MaxUnauthenticatedMessages)
             {
-                var raw = await ReceiveTextAsync(socket, ct);
-                if (raw is null) break;
+                _logger.LogWarning("Dropping {Ip}: too many messages without authenticating", conn.ClientIp);
+                await conn.Tracked.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authenticate first");
+                break;
+            }
 
-                MessageHeader? header;
-                try { header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts); }
-                catch (JsonException ex)
-                {
-                    _logger.LogWarning("Malformed JSON from {Ip}: {Msg}", clientIp, ex.Message);
-                    continue;
-                }
-                if (header is null) continue;
-
-                switch (header.Kind)
-                {
-                    case MessageKinds.PairInit:
-                        await OnPairInit(socket, clientIp, ct);
-                        break;
-
-                    case MessageKinds.PairConfirm:
-                        await OnPairConfirm(socket, clientIp, raw, ct);
-                        break;
-
-                    case MessageKinds.Auth:
-                        session = await OnAuth(socket, clientIp, raw, pendingNonce, ct);
-                        if (session is not null) onSessionEstablished(session);
-                        break;
-
-                    case MessageKinds.Ping:
-                        await SendAsync(socket, new { kind = MessageKinds.Pong, ts = Now() }, ct);
-                        break;
-
-                    case MessageKinds.Request:
-                        if (session is null)
-                        {
-                            pendingNonce = IssueChallenge(socket, ct);
-                            continue;
-                        }
-                        await OnRequest(socket, raw, session, ct);
-                        break;
-
-                    case MessageKinds.Subscribe:
-                        if (session is null)
-                        {
-                            pendingNonce = IssueChallenge(socket, ct);
-                            continue;
-                        }
-                        await OnSubscribe(socket, raw, session, subscriptions, ct);
-                        break;
-
-                    case MessageKinds.Unsubscribe:
-                        OnUnsubscribe(raw, subscriptions);
-                        break;
-
-                    default:
-                        if (session is null)
-                            pendingNonce = IssueChallenge(socket, ct);
-                        else
-                            _logger.LogDebug("Ignoring unknown kind '{Kind}' from session {Sess}",
-                                header.Kind, session.SessionId[..8]);
-                        break;
-                }
+            try
+            {
+                await HandleMessageAsync(conn, raw, ct);
+            }
+            catch (JsonException ex)
+            {
+                // Wrong types in an otherwise valid JSON (e.g. "code": 123) used to
+                // escape the loop and drop the connection without a word.
+                _logger.LogWarning("Malformed message from {Ip}: {Msg}", conn.ClientIp, ex.Message);
             }
         }
-        finally
+    }
+
+    private async Task HandleMessageAsync(Connection conn, string raw, CancellationToken ct)
+    {
+        var header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts);
+        if (header?.Kind is null) return;
+
+        switch (header.Kind)
         {
-            foreach (var kv in subscriptions) kv.Value.Cancel();
-            subscriptions.Clear();
+            case MessageKinds.PairInit:
+                await OnPairInit(conn, ct);
+                break;
+
+            case MessageKinds.PairConfirm:
+                await OnPairConfirm(conn, raw, ct);
+                break;
+
+            case MessageKinds.Auth:
+                await OnAuth(conn, raw, ct);
+                break;
+
+            case MessageKinds.Ping:
+                await SendAsync(conn, new { kind = MessageKinds.Pong, ts = Now() }, ct);
+                break;
+
+            case MessageKinds.Request:
+                if (conn.Session is null) { await ChallengeAsync(conn, ct); return; }
+                await OnRequest(conn, raw, ct);
+                break;
+
+            case MessageKinds.Subscribe:
+                if (conn.Session is null) { await ChallengeAsync(conn, ct); return; }
+                await OnSubscribe(conn, raw, ct);
+                break;
+
+            case MessageKinds.Unsubscribe:
+                if (conn.Session is null) return;
+                OnUnsubscribe(conn, header.Id);
+                break;
+
+            default:
+                if (conn.Session is null)
+                    await ChallengeAsync(conn, ct);
+                else
+                    _logger.LogDebug("Ignoring unknown kind '{Kind}' from session {Sess}",
+                        header.Kind, Short(conn.Session.SessionId));
+                break;
         }
     }
 
     // ══════════════════════════════════════════════════════════════
     // Pairing (bootstrap)
     // ══════════════════════════════════════════════════════════════
-    private async Task OnPairInit(WebSocket socket, string clientIp, CancellationToken ct)
+    private async Task OnPairInit(Connection conn, CancellationToken ct)
     {
-        var code = _pairing.IssueCode(clientIp);
-        // Ack: no payload — client already knows we're waiting for pair_confirm.
-        await SendAsync(socket, new
+        switch (_pairing.RequestCode(conn.ClientIp))
         {
-            kind    = "pair_init_ack",
-            ttlSec  = _settings.Pairing.CodeTtlSeconds,
-            ts      = Now(),
-        }, ct);
-    }
-
-    private async Task OnPairConfirm(WebSocket socket, string clientIp, string raw, CancellationToken ct)
-    {
-        var msg = JsonSerializer.Deserialize<PairConfirmMessage>(raw, JsonOpts);
-        if (msg is null)
-        {
-            await SendAsync(socket, PairFail(ErrorCodes.InvalidParams, "Malformed pair_confirm"), ct);
-            return;
-        }
-
-        var result = _pairing.Validate(msg.Code, clientIp);
-        switch (result)
-        {
-            case PairingValidationResult.Locked l:
-                await SendAsync(socket, PairFail(ErrorCodes.RateLimited,
+            case PairingRequestResult.Locked l:
+                await SendAsync(conn, PairFail(ErrorCodes.RateLimited,
                     $"Too many failed attempts. Try again in {l.RemainingSeconds}s."), ct);
                 return;
 
-            case PairingValidationResult.InvalidCode:
-                await SendAsync(socket, PairFail(ErrorCodes.PairingFailed, "Invalid or expired code."), ct);
+            case PairingRequestResult.Busy:
+                await SendAsync(conn, PairFail(ErrorCodes.RateLimited,
+                    "Too many pairings in progress. Try again in a couple of minutes."), ct);
                 return;
+        }
 
-            case PairingValidationResult.Ok:
-                // Continue below.
-                break;
+        // Ack: no code in it — the user reads the code on the PC.
+        await SendAsync(conn, new
+        {
+            kind   = "pair_init_ack",
+            ttlSec = _settings.Pairing.CodeTtlSeconds,
+            ts     = Now(),
+        }, ct);
+    }
+
+    private async Task OnPairConfirm(Connection conn, string raw, CancellationToken ct)
+    {
+        var msg = JsonSerializer.Deserialize<PairConfirmMessage>(raw, JsonOpts);
+        if (msg is null || string.IsNullOrEmpty(msg.Code) || msg.PublicKey is null)
+        {
+            await SendAsync(conn, PairFail(ErrorCodes.InvalidParams, "Malformed pair_confirm"), ct);
+            return;
+        }
+
+        // Validate the payload BEFORE consuming the code, so a malformed request
+        // does not burn a code the user is still reading.
+        var deviceName = SanitizeDeviceName(msg.DeviceName);
+        if (deviceName is null)
+        {
+            await SendAsync(conn, PairFail(ErrorCodes.InvalidParams, "deviceName is required."), ct);
+            return;
         }
 
         byte[] publicKey;
         try { publicKey = Convert.FromBase64String(msg.PublicKey); }
-        catch { await SendAsync(socket, PairFail(ErrorCodes.InvalidParams, "publicKey must be base64.")); return; }
-
-        if (publicKey.Length != 32)
+        catch (FormatException)
         {
-            await SendAsync(socket, PairFail(ErrorCodes.InvalidParams, "publicKey must be 32 bytes (Ed25519)."), ct);
+            await SendAsync(conn, PairFail(ErrorCodes.InvalidParams, "publicKey must be base64."), ct);
             return;
         }
 
-        var deviceId = GenerateUlid();
-        var device = new Device(deviceId, msg.DeviceName, publicKey, DateTimeOffset.UtcNow, null, false);
+        if (publicKey.Length != 32)
+        {
+            await SendAsync(conn, PairFail(ErrorCodes.InvalidParams, "publicKey must be 32 bytes (Ed25519)."), ct);
+            return;
+        }
+
+        switch (_pairing.Validate(msg.Code, conn.ClientIp))
+        {
+            case PairingValidationResult.Locked l:
+                await SendAsync(conn, PairFail(ErrorCodes.RateLimited,
+                    $"Too many failed attempts. Try again in {l.RemainingSeconds}s."), ct);
+                return;
+
+            case PairingValidationResult.InvalidCode:
+                await SendAsync(conn, PairFail(ErrorCodes.PairingFailed, "Invalid or expired code."), ct);
+                return;
+        }
+
+        var deviceId = GenerateDeviceId();
+        var device = new Device(deviceId, deviceName, publicKey, DateTimeOffset.UtcNow, null, false);
         _devices.Insert(device);
 
-        _logger.LogInformation("Paired new device: {Name} ({Id})", device.Name, device.Id);
+        _logger.LogInformation("Paired new device: {Name} ({Id}) from {Ip}", device.Name, device.Id, conn.ClientIp);
 
-        await SendAsync(socket, new PairResultMessage(
+        await SendAsync(conn, new PairResultMessage(
             Kind:            MessageKinds.PairResult,
             Success:         true,
             DeviceId:        deviceId,
@@ -314,122 +402,228 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             Error:           null), ct);
     }
 
+    /// <summary>Trim, drop control characters, cap at 64. Null when nothing usable is left.</summary>
+    private static string? SanitizeDeviceName(string? name)
+    {
+        if (name is null) return null;
+        var clean = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        if (clean.Length > 64) clean = clean[..64].TrimEnd();
+        return clean.Length == 0 ? null : clean;
+    }
+
     // ══════════════════════════════════════════════════════════════
     // Auth (each reconnect)
     // ══════════════════════════════════════════════════════════════
-    private async Task<byte[]> OnFirstContactAsync(WebSocket socket, CancellationToken ct)
-    {
-        return IssueChallenge(socket, ct);
-    }
 
-    private byte[] IssueChallenge(WebSocket socket, CancellationToken ct)
+    /// <summary>
+    /// Sends a challenge unless one is already pending. Re-issuing on every
+    /// unauthenticated message would swap the nonce under a client that is
+    /// signing the previous one, and its auth would then always fail.
+    /// </summary>
+    private async Task ChallengeAsync(Connection conn, CancellationToken ct)
     {
+        if (conn.PendingNonce is not null) return;
+
         var nonce = RandomNumberGenerator.GetBytes(32);
-        _ = SendAsync(socket, new AuthChallengeMessage(
-            Kind: MessageKinds.AuthChallenge,
+        conn.PendingNonce = nonce;
+        await SendAsync(conn, new AuthChallengeMessage(
+            Kind:  MessageKinds.AuthChallenge,
             Nonce: Convert.ToHexString(nonce).ToLowerInvariant()), ct);
-        return nonce;
     }
 
-    private async Task<ClientSession?> OnAuth(
-        WebSocket socket, string clientIp, string raw, byte[] pendingNonce, CancellationToken ct)
+    private async Task OnAuth(Connection conn, string raw, CancellationToken ct)
     {
+        if (conn.Session is not null) return; // already authenticated; nothing to do
+
+        // Single use: whatever happens below, this nonce is spent.
+        var nonce = conn.PendingNonce;
+        conn.PendingNonce = null;
+
         var msg = JsonSerializer.Deserialize<AuthMessage>(raw, JsonOpts);
-        if (msg is null || pendingNonce.Length != 32)
+        if (msg?.DeviceId is null || msg.Signature is null || nonce is null)
         {
-            await SendAsync(socket, AuthFail("Missing challenge or malformed auth."), ct);
-            return null;
+            await RejectAuthAsync(conn, "Missing challenge or malformed auth.", ct);
+            return;
         }
 
         var device = _devices.Get(msg.DeviceId);
         if (device is null || device.Revoked)
         {
-            await SendAsync(socket, AuthFail("Device not paired or revoked."), ct);
-            return null;
+            await RejectAuthAsync(conn, "Device not paired or revoked.", ct, DeviceAdmin.RevokedCloseStatus);
+            return;
         }
 
         byte[] signature;
         try { signature = Convert.FromBase64String(msg.Signature); }
-        catch { await SendAsync(socket, AuthFail("Signature must be base64.")); return null; }
-
-        if (!Ed25519Signing.Verify(device.PublicKey, pendingNonce, signature))
+        catch (FormatException)
         {
-            await SendAsync(socket, AuthFail("Invalid signature."), ct);
-            return null;
+            await RejectAuthAsync(conn, "Signature must be base64.", ct);
+            return;
+        }
+
+        if (!Ed25519Signing.Verify(device.PublicKey, nonce, signature))
+        {
+            await RejectAuthAsync(conn, "Invalid signature.", ct);
+            return;
         }
 
         _devices.TouchLastSeen(device.Id);
         var session = _sessions.Create(device.Id, device.Name);
+        conn.Session = session;
+        conn.Tracked.DeviceId = device.Id;
         _logger.LogInformation("Authenticated {Name} from {Ip} → session {Sess}",
-            device.Name, clientIp, session.SessionId[..8]);
+            device.Name, conn.ClientIp, Short(session.SessionId));
 
-        await SendAsync(socket, new AuthResultMessage(
+        await SendAsync(conn, new AuthResultMessage(
             Kind:      MessageKinds.AuthResult,
             Success:   true,
             SessionId: session.SessionId,
             Error:     null), ct);
-        return session;
     }
+
+    private async Task RejectAuthAsync(
+        Connection conn, string message, CancellationToken ct,
+        WebSocketCloseStatus close = WebSocketCloseStatus.PolicyViolation)
+    {
+        _logger.LogWarning("Auth rejected for {Ip}: {Reason}", conn.ClientIp, message);
+        await SendAsync(conn, AuthFail(message), ct);
+        await conn.Tracked.CloseAsync(close, "Authentication failed");
+    }
+
+    /// <summary>
+    /// The session can be ended from outside (revoke from tray / panel) while the
+    /// socket is still open. Checked before every command, not only at auth time.
+    /// </summary>
+    private bool SessionAlive(Connection conn) =>
+        conn.Session is not null && _sessions.Get(conn.Session.SessionId) is not null;
 
     // ══════════════════════════════════════════════════════════════
     // Command dispatch
     // ══════════════════════════════════════════════════════════════
-    private async Task OnRequest(WebSocket socket, string raw, ClientSession session, CancellationToken ct)
+    private async Task OnRequest(Connection conn, string raw, CancellationToken ct)
     {
         var req = JsonSerializer.Deserialize<CommandRequest>(raw, JsonOpts);
-        if (req is null)
+        if (!IsWellFormed(req))
         {
-            _logger.LogWarning("Failed to parse request from {Sess}", session.SessionId[..8]);
+            await SendAsync(conn, CommandResponse.Fail(req?.Id ?? "", ErrorCodes.InvalidParams,
+                "Request needs id, domain and action."), ct);
             return;
         }
-        var response = await _router.DispatchAsync(req, session, ct);
-        await SendAsync(socket, response, ct);
+
+        // Unknown domains fail immediately; no lane (and no worker) for garbage.
+        if (!_router.Modules.ContainsKey(req!.Domain))
+        {
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
+                $"Unknown domain '{req.Domain}'."), ct);
+            return;
+        }
+
+        if (!conn.Lanes.TryGetValue(req.Domain, out var lane))
+        {
+            lane = Channel.CreateBounded<CommandRequest>(new BoundedChannelOptions(LaneCapacity)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                FullMode     = BoundedChannelFullMode.Wait,
+            });
+            conn.Lanes[req.Domain] = lane;
+            AddWorker(conn, Task.Run(() => RunLaneAsync(conn, lane.Reader, ct), CancellationToken.None));
+        }
+
+        await lane.Writer.WriteAsync(req, ct);
     }
+
+    private async Task RunLaneAsync(Connection conn, ChannelReader<CommandRequest> reader, CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var req in reader.ReadAllAsync(ct))
+            {
+                if (!SessionAlive(conn))
+                {
+                    await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.NotAuthenticated,
+                        "Session ended."), ct);
+                    await conn.Tracked.CloseAsync(DeviceAdmin.RevokedCloseStatus, "Session ended");
+                    return;
+                }
+
+                var response = await _router.DispatchAsync(req, conn.Session!, ct);
+                await SendAsync(conn, response, ct);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException)
+        {
+            // Connection going away; nothing left to answer to.
+        }
+    }
+
+    /// <summary>Tracks a background task so disconnect can wait for it. Finished ones are dropped as we go.</summary>
+    private static void AddWorker(Connection conn, Task worker)
+    {
+        conn.Workers.RemoveAll(t => t.IsCompleted);
+        conn.Workers.Add(worker);
+    }
+
+    private static bool IsWellFormed(CommandRequest? req) =>
+        req is not null &&
+        !string.IsNullOrEmpty(req.Id) &&
+        !string.IsNullOrEmpty(req.Domain) &&
+        !string.IsNullOrEmpty(req.Action);
 
     // ══════════════════════════════════════════════════════════════
     // Streams (subscribe / unsubscribe)
     // ══════════════════════════════════════════════════════════════
-    private async Task OnSubscribe(
-        WebSocket socket,
-        string raw,
-        ClientSession session,
-        ConcurrentDictionary<string, CancellationTokenSource> subs,
-        CancellationToken outerCt)
+    private async Task OnSubscribe(Connection conn, string raw, CancellationToken outerCt)
     {
         var req = JsonSerializer.Deserialize<CommandRequest>(raw, JsonOpts);
-        if (req is null) return;
-
-        if (!_router.Modules.TryGetValue(req.Domain, out var module))
+        if (!IsWellFormed(req))
         {
-            await SendAsync(socket, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
+            await SendAsync(conn, CommandResponse.Fail(req?.Id ?? "", ErrorCodes.InvalidParams,
+                "Subscribe needs id, domain and action."), outerCt);
+            return;
+        }
+
+        if (!_router.Modules.TryGetValue(req!.Domain, out var module))
+        {
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
                 $"Unknown domain '{req.Domain}'."), outerCt);
             return;
         }
 
         if (module is not IStreamModule streamer || !streamer.StreamActions.Contains(req.Action))
         {
-            await SendAsync(socket, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
                 $"Action '{req.Domain}.{req.Action}' is not streamable."), outerCt);
             return;
         }
 
+        var subs = conn.Subscriptions;
+
         // Cancel previous subscription with same id, if any.
         if (subs.TryRemove(req.Id, out var prev)) prev.Cancel();
 
+        if (subs.Count >= MaxSubscriptionsPerConnection)
+        {
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.RateLimited,
+                $"At most {MaxSubscriptionsPerConnection} subscriptions per connection."), outerCt);
+            return;
+        }
+
+        var session = conn.Session!;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
         subs[req.Id] = cts;
-        await SendAsync(socket, CommandResponse.Ok(req.Id, new { subscribed = true }), outerCt);
+        await SendAsync(conn, CommandResponse.Ok(req.Id, new { subscribed = true }), outerCt);
         _logger.LogInformation("[{Sess}] subscribed {Domain}.{Action} (id={Id})",
-            session.SessionId[..8], req.Domain, req.Action, req.Id);
+            Short(session.SessionId), req.Domain, req.Action, req.Id);
 
-        _ = Task.Run(async () =>
+        AddWorker(conn, Task.Run(async () =>
         {
             try
             {
                 await foreach (var item in streamer.StartStreamAsync(req.Action, req.Params, session, cts.Token))
                 {
-                    if (cts.IsCancellationRequested) break;
-                    await SendAsync(socket, new
+                    if (cts.IsCancellationRequested || !SessionAlive(conn)) break;
+                    await SendAsync(conn, new
                     {
                         kind = MessageKinds.Stream,
                         id   = req.Id,
@@ -438,57 +632,66 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
                     }, cts.Token);
                 }
             }
-            catch (OperationCanceledException) { /* normal on unsubscribe */ }
+            catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException)
+            {
+                // Normal on unsubscribe or disconnect.
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Stream {Domain}.{Action} (id={Id}) errored", req.Domain, req.Action, req.Id);
             }
             finally
             {
-                subs.TryRemove(req.Id, out _);
-                _logger.LogInformation("[{Sess}] stream {Id} ended", session.SessionId[..8], req.Id);
+                // Only remove our own entry: a re-subscribe with the same id may
+                // already have replaced it.
+                subs.TryRemove(new KeyValuePair<string, CancellationTokenSource>(req.Id, cts));
+                cts.Dispose();
+                _logger.LogInformation("[{Sess}] stream {Id} ended", Short(session.SessionId), req.Id);
             }
-        }, outerCt);
+        }, CancellationToken.None));
     }
 
-    private void OnUnsubscribe(string raw, ConcurrentDictionary<string, CancellationTokenSource> subs)
+    private void OnUnsubscribe(Connection conn, string? id)
     {
-        var header = JsonSerializer.Deserialize<MessageHeader>(raw, JsonOpts);
-        if (header?.Id is null) return;
-        if (subs.TryRemove(header.Id, out var cts))
+        if (id is null) return;
+        if (conn.Subscriptions.TryRemove(id, out var cts))
         {
             cts.Cancel();
-            _logger.LogInformation("Unsubscribed {Id}", header.Id);
+            _logger.LogInformation("Unsubscribed {Id}", id);
         }
     }
 
     // ══════════════════════════════════════════════════════════════
     // Helpers
     // ══════════════════════════════════════════════════════════════
-    private static async Task<string?> ReceiveTextAsync(WebSocket socket, CancellationToken ct)
+
+    /// <summary>Reads one text message. Null on close; closes with 1009 if it exceeds <paramref name="maxBytes"/>.</summary>
+    private async Task<string?> ReceiveTextAsync(
+        TrackedConnection conn, byte[] buffer, int maxBytes, CancellationToken ct)
     {
-        var buffer = new byte[8 * 1024];
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         WebSocketReceiveResult result;
         do
         {
-            result = await socket.ReceiveAsync(buffer, ct);
+            result = await conn.Socket.ReceiveAsync(buffer, ct);
             if (result.MessageType == WebSocketMessageType.Close)
             {
-                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                await conn.CloseAsync(WebSocketCloseStatus.NormalClosure, "");
+                return null;
+            }
+            if (ms.Length + result.Count > maxBytes)
+            {
+                _logger.LogWarning("Message from {Ip} over {Max} bytes; closing", conn.ClientIp, maxBytes);
+                await conn.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Message too big");
                 return null;
             }
             ms.Write(buffer, 0, result.Count);
         } while (!result.EndOfMessage);
-        return Encoding.UTF8.GetString(ms.ToArray());
+        return Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
     }
 
-    private static Task SendAsync(WebSocket socket, object payload, CancellationToken ct = default)
-    {
-        var json = JsonSerializer.Serialize(payload, JsonOpts);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        return socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
-    }
+    private static Task SendAsync(Connection conn, object payload, CancellationToken ct) =>
+        conn.Tracked.SendAsync(JsonSerializer.SerializeToUtf8Bytes(payload, JsonOpts), ct);
 
     private static PairResultMessage PairFail(string code, string msg) =>
         new(MessageKinds.PairResult, false, null, null, null, new ErrorInfo(code, msg));
@@ -496,15 +699,19 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     private static AuthResultMessage AuthFail(string message) =>
         new(MessageKinds.AuthResult, false, null, new ErrorInfo(ErrorCodes.NotAuthenticated, message));
 
-    private static string GenerateUlid()
+    /// <summary>
+    /// 32 hex chars: 8 bytes of Unix ms + 8 random bytes. Not a ULID (the docs
+    /// used to say so); the format is kept because existing devices use it.
+    /// </summary>
+    private static string GenerateDeviceId()
     {
-        // Simplified ULID: 26-char Crockford base32 of time+random.
         var bytes = new byte[16];
-        var msPart = BitConverter.GetBytes(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        Buffer.BlockCopy(msPart, 0, bytes, 0, 8);
+        BitConverter.TryWriteBytes(bytes.AsSpan(0, 8), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         RandomNumberGenerator.Fill(bytes.AsSpan(8, 8));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    private static string Short(string id) => id.Length > 8 ? id[..8] : id;
 
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 

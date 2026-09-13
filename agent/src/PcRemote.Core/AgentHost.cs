@@ -11,6 +11,7 @@ using PcRemote.Core.Router;
 using PcRemote.Core.Security;
 using PcRemote.Core.Server;
 using PcRemote.Core.Storage;
+using Serilog;
 
 namespace PcRemote.Core;
 
@@ -33,6 +34,13 @@ public static class AgentHost
             optional: false,
             reloadOnChange: true);
 
+        // Every ILogger<T> goes to Serilog (file + the panel's ring buffer). Without
+        // this the host kept its default console/debug providers: a WinExe has no
+        // console, so the file and /api/logs only ever saw what Program logged itself.
+        // Log.Logger must be configured before Build() — see Program.
+        builder.Logging.ClearProviders();
+        builder.Logging.AddSerilog(Log.Logger, dispose: false);
+
         var agentSettings = builder.Configuration.GetSection("Agent").Get<AgentSettings>() ?? new AgentSettings();
         builder.Services.AddSingleton(agentSettings);
 
@@ -48,6 +56,7 @@ public static class AgentHost
         builder.Services.AddSingleton<DeviceRepository>();
         builder.Services.AddSingleton<PairingService>();
         builder.Services.AddSingleton<SessionManager>();
+        builder.Services.AddSingleton<DeviceAdmin>();
 
         // Router + modules (via reflection on loaded assemblies)
         RegisterModules(builder.Services);

@@ -182,20 +182,27 @@ function fmtUptime(sec) {
   return parts.join(" ");
 }
 
+// Todo lo que viene del agente se escapa antes de ir a innerHTML. El nombre
+// del dispositivo lo elige el móvil al emparejar: sin escapar, un nombre con
+// <img onerror=…> ejecutaba JS en un panel que puede emparejar y borrar.
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
     $("header-sub").textContent = `${s.hostname} · ${s.username}@${s.lanIp} · v${s.version}`;
     $("status-body").innerHTML = `
-      <div class="row"><span class="k">Hostname</span><span class="v">${s.hostname}</span></div>
-      <div class="row"><span class="k">Usuario</span><span class="v">${s.username}</span></div>
-      <div class="row"><span class="k">IP LAN</span><span class="v">${s.lanIp}</span></div>
-      <div class="row"><span class="k">Puerto WSS</span><span class="v">${s.wsPort}</span></div>
-      <div class="row"><span class="k">Bind</span><span class="v">${s.wsBindAddress}</span></div>
-      <div class="row"><span class="k">mDNS</span><span class="v">${s.mdnsService}</span></div>
-      <div class="row"><span class="k">Cert SHA-256</span><span class="v mono" style="font-size:10px">${s.certFingerprint}</span></div>
-      <div class="row"><span class="k">Uptime</span><span class="v">${fmtUptime(s.uptimeSec)}</span></div>
-      <div class="row"><span class="k">Pair TTL</span><span class="v">${s.pairing.codeTtlSec}s · ${s.pairing.maxAttempts} intentos · lockout ${s.pairing.lockoutSec}s</span></div>
+      <div class="row"><span class="k">Hostname</span><span class="v">${esc(s.hostname)}</span></div>
+      <div class="row"><span class="k">Usuario</span><span class="v">${esc(s.username)}</span></div>
+      <div class="row"><span class="k">IP LAN</span><span class="v">${esc(s.lanIp)}</span></div>
+      <div class="row"><span class="k">Puerto WSS</span><span class="v">${esc(s.wsPort)}</span></div>
+      <div class="row"><span class="k">Bind</span><span class="v">${esc(s.wsBindAddress)}</span></div>
+      <div class="row"><span class="k">mDNS</span><span class="v">${esc(s.mdnsService)}</span></div>
+      <div class="row"><span class="k">Cert SHA-256</span><span class="v mono" style="font-size:10px">${esc(s.certFingerprint)}</span></div>
+      <div class="row"><span class="k">Uptime</span><span class="v">${esc(fmtUptime(s.uptimeSec))}</span></div>
+      <div class="row"><span class="k">Pair TTL</span><span class="v">${esc(s.pairing.codeTtlSec)}s · ${esc(s.pairing.maxAttempts)} intentos · lockout ${esc(s.pairing.lockoutSec)}s</span></div>
     `;
   } catch (e) {
     $("header-sub").textContent = "Sin conexión al agente";
@@ -211,16 +218,18 @@ async function refreshDevices() {
       $("devices-body").innerHTML = '<div class="empty">Ningún dispositivo emparejado todavía.</div>';
       return;
     }
+    // El id va en data-*, no dentro de un onclick: así no hay JS construido
+    // con datos, y el clic lo recoge el listener delegado de #devices-body.
     const rows = list.map(d => `
       <tr>
-        <td>${d.name}</td>
-        <td class="mono">${d.id.slice(0, 8)}…</td>
-        <td>${fmtDate(d.pairedAt)}</td>
-        <td>${d.lastSeenAt ? fmtDate(d.lastSeenAt) : '<span class="mono">nunca</span>'}</td>
+        <td>${esc(d.name)}</td>
+        <td class="mono">${esc(String(d.id).slice(0, 8))}…</td>
+        <td>${esc(fmtDate(d.pairedAt))}</td>
+        <td>${d.lastSeenAt ? esc(fmtDate(d.lastSeenAt)) : '<span class="mono">nunca</span>'}</td>
         <td>${d.revoked ? '<span class="badge danger"><span class="dot"></span>REVOCADO</span>' : '<span class="badge"><span class="dot"></span>ACTIVO</span>'}</td>
         <td style="text-align:right">
-          ${!d.revoked ? `<button class="ghost small" onclick="revokeDevice('${d.id}', false)">Revocar</button>` : ''}
-          <button class="danger small" onclick="revokeDevice('${d.id}', true)">Borrar</button>
+          ${!d.revoked ? `<button class="ghost small" data-action="revoke" data-id="${esc(d.id)}">Revocar</button>` : ''}
+          <button class="danger small" data-action="delete" data-id="${esc(d.id)}">Borrar</button>
         </td>
       </tr>
     `).join("");
@@ -236,9 +245,20 @@ async function refreshDevices() {
 async function revokeDevice(id, hard) {
   if (hard && !confirm("¿Borrar dispositivo? Esta acción es irreversible.")) return;
   if (!hard && !confirm("¿Revocar acceso? El dispositivo tendrá que emparejarse de nuevo.")) return;
-  await fetch(`/api/devices/${id}?hard=${hard}`, { method: "DELETE" });
+  try {
+    await api(`/api/devices/${encodeURIComponent(id)}?hard=${hard}`, { method: "DELETE" });
+  } catch (e) {
+    alert("No se pudo completar: " + e.message);
+  }
   refreshDevices();
+  refreshConns();
 }
+
+$("devices-body").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-action]");
+  if (!btn) return;
+  revokeDevice(btn.dataset.id, btn.dataset.action === "delete");
+});
 
 async function refreshConns() {
   try {
@@ -250,8 +270,8 @@ async function refreshConns() {
     }
     $("conns-body").innerHTML = list.map(c => `
       <div class="row">
-        <span class="k mono">${c.clientIp}</span>
-        <span class="v">${fmtDate(c.connectedAt)} · ${c.state}</span>
+        <span class="k mono">${esc(c.clientIp)}</span>
+        <span class="v">${esc(fmtDate(c.connectedAt))} · ${esc(c.state)}${c.deviceId ? "" : " · sin autenticar"}</span>
       </div>
     `).join("");
   } catch (e) {}
@@ -264,15 +284,11 @@ async function refreshLogs() {
     $("logs-body").innerHTML = lines.map(l => {
       const ts = new Date(l.ts).toLocaleTimeString();
       const lvl = l.level.slice(0, 3).toUpperCase();
-      return `<span class="log-level-${l.level}">[${ts} ${lvl}]</span> ${escapeHtml(l.message)}`;
+      return `<span class="log-level-${esc(l.level)}">[${esc(ts)} ${esc(lvl)}]</span> ${esc(l.message)}`;
     }).join("\n");
     // Auto-scroll to bottom
     $("logs-body").scrollTop = $("logs-body").scrollHeight;
   } catch (e) { $("logs-body").textContent = "Error cargando logs"; }
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 let pairTimer = null;
@@ -283,9 +299,9 @@ async function startPair() {
     const r = await api("/api/pair/start", { method: "POST" });
     const qrUrl = "/api/pair/qr?data=" + encodeURIComponent(r.qrData);
     $("pair-body").innerHTML = `
-      <div class="pair-code">${r.code}</div>
-      <div class="qr-wrap"><img src="${qrUrl}" alt="QR de emparejamiento" /></div>
-      <div class="ttl">Válido durante <span id="ttl-left">${r.ttlSec}</span>s</div>
+      <div class="pair-code">${esc(r.code)}</div>
+      <div class="qr-wrap"><img src="${esc(qrUrl)}" alt="QR de emparejamiento" /></div>
+      <div class="ttl">Válido durante <span id="ttl-left">${esc(r.ttlSec)}</span>s</div>
       <div style="text-align:center; margin-top:12px">
         <button class="ghost" onclick="cancelPair()">Cancelar</button>
       </div>

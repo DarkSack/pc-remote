@@ -40,6 +40,12 @@ import javax.net.ssl.X509TrustManager
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, AUTHENTICATING, CONNECTED, RECONNECTING, FAILED }
 
+/** The agent presented a certificate other than the one pinned at pairing. */
+class CertificateMismatchException(message: String) : java.security.cert.CertificateException(message)
+
+private fun sha256Hex(cert: X509Certificate): String =
+    Crypto.toHex(java.security.MessageDigest.getInstance("SHA-256").digest(cert.encoded))
+
 class AgentClient(private val creds: AgentCredentials) {
 
     private val json = Json {
@@ -58,7 +64,10 @@ class AgentClient(private val creds: AgentCredentials) {
     private val pending = ConcurrentHashMap<String, CompletableDeferred<ResponseMsg>>()
     private val streams = ConcurrentHashMap<String, (JsonElement) -> Unit>()
 
-    private var ws: WebSocket? = null
+    // Every callback checks `webSocket !== ws` and bails out: the listener is
+    // shared, and a socket that already died could otherwise fire onFailure after
+    // its replacement opened and start a second, parallel reconnect loop.
+    @Volatile private var ws: WebSocket? = null
     private var reconnectJob: Job? = null
     private var backoffIndex = 0
     private val backoff = longArrayOf(1000, 2000, 4000, 8000, 16000, 30000)
@@ -69,11 +78,24 @@ class AgentClient(private val creds: AgentCredentials) {
     }
 
     fun disconnect() {
+        // State first, so the onClosed that follows does not schedule a reconnect.
+        _state.value = ConnectionState.DISCONNECTED
         reconnectJob?.cancel()
         reconnectJob = null
-        ws?.close(1000, "bye")
+        val old = ws
         ws = null
-        _state.value = ConnectionState.DISCONNECTED
+        old?.close(1000, "bye")
+    }
+
+    /** States from which no automatic reconnect should happen. */
+    private fun isTerminal() =
+        _state.value == ConnectionState.DISCONNECTED || _state.value == ConnectionState.FAILED
+
+    /** FAILED is final until the user acts: retrying a revoked device forever helps nobody. */
+    private fun fail(message: String) {
+        reconnectJob?.cancel()
+        _error.value = message
+        _state.value = ConnectionState.FAILED
     }
 
     private fun openSocket(initial: Boolean) {
@@ -90,6 +112,7 @@ class AgentClient(private val creds: AgentCredentials) {
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (webSocket !== ws) return
             Log.i(TAG, "WS open, sending probe to trigger auth_challenge")
             _state.value = ConnectionState.AUTHENTICATING
             // Sending any request without a session triggers the challenge.
@@ -99,24 +122,40 @@ class AgentClient(private val creds: AgentCredentials) {
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            handleFrame(text)
+            if (webSocket !== ws) return
+            handleFrame(webSocket, text)
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            if (webSocket !== ws) return
+            if (code == CLOSE_REVOKED) fail("Este dispositivo ya no está autorizado en el PC. Vuelve a emparejarlo.")
+            webSocket.close(1000, null)
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (webSocket !== ws) return
             Log.w(TAG, "WS failure: ${t.message}")
-            _error.value = t.message
             failAllPending(t)
+            if (isTerminal()) return
+            // A certificate that does not match the pinned one will not start
+            // matching on the next attempt: stop and tell the user.
+            if (generateSequence(t) { it.cause }.any { it is CertificateMismatchException }) {
+                fail("El certificado del PC no coincide con el emparejado. ¿Reinstalaste el agente? Vuelve a emparejar.")
+                return
+            }
+            _error.value = t.message
             scheduleReconnect()
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (webSocket !== ws) return
             Log.i(TAG, "WS closed $code $reason")
             failAllPending(RuntimeException("closed: $reason"))
-            if (_state.value != ConnectionState.DISCONNECTED) scheduleReconnect()
+            if (!isTerminal()) scheduleReconnect()
         }
     }
 
-    private fun handleFrame(text: String) {
+    private fun handleFrame(socket: WebSocket, text: String) {
         val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         when (root["kind"]?.jsonPrimitive?.content) {
             MsgKinds.AuthChallenge -> {
@@ -124,7 +163,7 @@ class AgentClient(private val creds: AgentCredentials) {
                 val nonce = Crypto.fromHex(nonceHex)
                 val priv  = Crypto.fromB64(creds.privateSeedB64)
                 val sig   = Crypto.sign(priv, nonce)
-                ws?.send(json.encodeToString(AuthMsg(
+                socket.send(json.encodeToString(AuthMsg(
                     deviceId  = creds.deviceId,
                     signature = Crypto.b64(sig),
                 )))
@@ -136,9 +175,8 @@ class AgentClient(private val creds: AgentCredentials) {
                     _state.value = ConnectionState.CONNECTED
                     _error.value = null
                 } else {
-                    _error.value = root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content ?: "auth failed"
-                    _state.value = ConnectionState.FAILED
-                    ws?.close(1000, "auth")
+                    fail(root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content ?: "auth failed")
+                    socket.close(1000, "auth")
                 }
             }
             MsgKinds.Response -> {
@@ -162,6 +200,7 @@ class AgentClient(private val creds: AgentCredentials) {
         _state.value = ConnectionState.RECONNECTING
         reconnectJob = scope.launch {
             delay(delayMs)
+            if (isTerminal()) return@launch
             backoffIndex = minOf(backoffIndex + 1, backoff.lastIndex)
             openSocket(initial = false)
         }
@@ -213,11 +252,10 @@ class AgentClient(private val creds: AgentCredentials) {
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-                val cert = chain.firstOrNull() ?: throw RuntimeException("no cert")
-                val sha256 = java.security.MessageDigest.getInstance("SHA-256").digest(cert.encoded)
-                val got    = Crypto.toHex(sha256)
+                val cert = chain.firstOrNull() ?: throw java.security.cert.CertificateException("no cert")
+                val got  = sha256Hex(cert)
                 if (!got.equals(pinnedFingerprintHex, ignoreCase = true)) {
-                    throw RuntimeException("Cert fingerprint mismatch: got=$got expected=$pinnedFingerprintHex")
+                    throw CertificateMismatchException("Cert fingerprint mismatch: got=$got expected=$pinnedFingerprintHex")
                 }
             }
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
@@ -230,7 +268,11 @@ class AgentClient(private val creds: AgentCredentials) {
             .build()
     }
 
-    companion object { private const val TAG = "AgentClient" }
+    companion object {
+        private const val TAG = "AgentClient"
+        /** Close code the agent uses for a revoked / deleted device. */
+        const val CLOSE_REVOKED = 4001
+    }
 }
 
 /** Cliente "one-shot" para pairing (sin credenciales pre-existentes). */
@@ -244,15 +286,23 @@ class PairingClient(
     private var keys: Crypto.Keypair? = null
     private var onPhase: ((PairPhase, String?) -> Unit)? = null
 
+    /** SHA-256 of the certificate this TLS session actually used. */
+    @Volatile private var seenFingerprint: String? = null
+
     fun start(onPhase: (PairPhase, String?) -> Unit) {
         this.onPhase = onPhase
         onPhase(PairPhase.CONNECTING, null)
         keys = Crypto.generateKeypair()
 
-        // TLS: accept anything — no fingerprint yet.
+        // TLS: nothing to pin yet, so any certificate is accepted — but we record
+        // which one. pair_result then reports the agent's fingerprint, and the two
+        // must match (see handle()). This is trust-on-first-use; scanning the QR,
+        // which carries the fingerprint, is the way to close the gap completely.
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                seenFingerprint = chain.firstOrNull()?.let(::sha256Hex)
+            }
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
         val sslCtx = SSLContext.getInstance("TLS").apply { init(null, trustAll, SecureRandom()) }
@@ -305,6 +355,14 @@ class PairingClient(
                 val deviceId = root["deviceId"]?.jsonPrimitive?.content ?: return
                 val fp       = root["certFingerprint"]?.jsonPrimitive?.content ?: return
                 val k = keys ?: return
+                // Someone in the middle presents their own certificate. If what the
+                // agent says it uses is not what we just talked to, do not pin it.
+                if (!fp.equals(seenFingerprint, ignoreCase = true)) {
+                    onPhase?.invoke(PairPhase.ERROR,
+                        "El certificado de la conexión no coincide con el que declara el PC. Emparejamiento cancelado.")
+                    ws?.close(1000, "fingerprint")
+                    return
+                }
                 lastResult = AgentCredentials(
                     deviceId           = deviceId,
                     privateSeedB64     = Crypto.b64(k.privateSeed),

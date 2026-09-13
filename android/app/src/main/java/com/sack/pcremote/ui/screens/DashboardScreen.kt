@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.sack.pcremote.data.CredentialsStore
 import com.sack.pcremote.net.*
 import com.sack.pcremote.ui.theme.*
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -36,7 +37,11 @@ import kotlinx.serialization.json.jsonPrimitive
 fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val creds = remember { store.load(deviceId) }
-    if (creds == null) { onBack(); return }
+    if (creds == null) {
+        // Navigating is a side effect: never do it straight from composition.
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
     val client = remember { AgentClient(creds) }
     val state by client.state.collectAsState()
     val error by client.error.collectAsState()
@@ -53,18 +58,23 @@ fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Uni
 
     LaunchedEffect(state) {
         if (state != ConnectionState.CONNECTED) return@LaunchedEffect
-        // fetch system.info once
-        runCatching {
-            val res = client.request("system", "info")
-            if (res.success && res.data != null) info = json.decodeFromJsonElement(SystemInfo.serializer(), res.data)
-        }
-        // subscribe stats
         val sub = client.subscribe("systeminfo", "stats") { data ->
             runCatching {
                 stats = json.decodeFromJsonElement(SystemStats.serializer(), data)
             }
         }
-        // TODO: dispose sub on state change out of CONNECTED
+        try {
+            // `info` lives in the systeminfo module; asking `system.info` got
+            // INVALID_COMMAND back and the card never showed.
+            runCatching {
+                val res = client.request("systeminfo", "info")
+                if (res.success && res.data != null) info = json.decodeFromJsonElement(SystemInfo.serializer(), res.data)
+            }
+            awaitCancellation()
+        } finally {
+            // Leaving CONNECTED (or the screen) cancels this effect: drop the stream.
+            sub.cancel()
+        }
     }
 
     val statusColor = when (state) {

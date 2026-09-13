@@ -37,11 +37,15 @@ public sealed class WindowsModule : ICommandModule
             return Task.FromResult(req.Action switch
             {
                 "list"     => List(req),
-                "focus"    => Op(req, h => WindowNative.SetForegroundWindow(h)),
+                "focus"    => Op(req, Focus),
                 "minimize" => Op(req, h => WindowNative.ShowWindow(h, WindowNative.SW_MINIMIZE)),
                 "maximize" => Op(req, h => WindowNative.ShowWindow(h, WindowNative.SW_MAXIMIZE)),
                 "restore"  => Op(req, h => WindowNative.ShowWindow(h, WindowNative.SW_RESTORE)),
-                "close"    => Op(req, h => { WindowNative.SendMessage(h, WindowNative.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); return true; }),
+                // PostMessage, not SendMessage: SendMessage waits until the window
+                // has handled WM_CLOSE, and an app with unsaved changes handles it by
+                // showing "Save changes?" — the agent then hung until someone
+                // answered at the PC. A hung window blocked it forever.
+                "close"    => Op(req, h => WindowNative.PostMessage(h, WindowNative.WM_CLOSE, IntPtr.Zero, IntPtr.Zero)),
                 _ => CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand, $"Unknown action '{req.Action}'"),
             });
         }
@@ -84,6 +88,14 @@ public sealed class WindowsModule : ICommandModule
             return true;
         }, IntPtr.Zero);
         return CommandResponse.Ok(req.Id, new { windows = items });
+    }
+
+    /// <summary>A minimized window stays minimized after SetForegroundWindow; restore it first.</summary>
+    private static bool Focus(IntPtr hwnd)
+    {
+        if (WindowNative.IsIconic(hwnd))
+            WindowNative.ShowWindow(hwnd, WindowNative.SW_RESTORE);
+        return WindowNative.SetForegroundWindow(hwnd);
     }
 
     private static CommandResponse Op(CommandRequest req, Func<IntPtr, bool> fn)
