@@ -37,10 +37,15 @@ internal static class RegistrySource
                 var systemComponent = sub.GetValue("SystemComponent") as int? ?? 0;
                 if (systemComponent == 1) continue; // filtra runtimes/hotfixes
 
-                var iconPath = ExtractPath(sub.GetValue("DisplayIcon") as string);
-                var installLoc = sub.GetValue("InstallLocation") as string;
-                var launch = File.Exists(iconPath) ? iconPath : installLoc;
-                if (string.IsNullOrWhiteSpace(launch)) continue;
+                // Only an existing .exe is launchable. DisplayIcon is often an .ico
+                // or the uninstaller, and InstallLocation is a folder: "launching"
+                // those opened an image viewer, an uninstaller or Explorer.
+                var launch = ExtractPath(sub.GetValue("DisplayIcon") as string);
+                if (launch is null ||
+                    !launch.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileName(launch).Contains("unins", StringComparison.OrdinalIgnoreCase) ||
+                    !File.Exists(launch))
+                    continue;
 
                 yield return new AppEntry(
                     Id:     "registry:" + subName,

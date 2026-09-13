@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -8,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
+using PcRemote.Core.Discovery;
 using PcRemote.Core.Security;
 using PcRemote.Core.Server;
 using QRCoder;
@@ -242,28 +240,7 @@ public static class PanelEndpoints
         await stream.CopyToAsync(ctx.Response.Body);
     }
 
-    private static string GuessLanIp()
-    {
-        try
-        {
-            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (ni.OperationalStatus != OperationalStatus.Up) continue;
-                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-                foreach (var ip in ni.GetIPProperties().UnicastAddresses)
-                {
-                    if (ip.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                    if (IPAddress.IsLoopback(ip.Address)) continue;
-                    var b = ip.Address.GetAddressBytes();
-                    // Preferir rangos privados típicos de LAN
-                    if (b[0] == 10 || (b[0] == 192 && b[1] == 168) || (b[0] == 172 && b[1] >= 16 && b[1] <= 31))
-                        return ip.Address.ToString();
-                }
-            }
-        }
-        catch { }
-        return "127.0.0.1";
-    }
+    private static string GuessLanIp() => LanAddress.Guess();
 
     private static string GetVersion() =>
         typeof(PanelEndpoints).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";

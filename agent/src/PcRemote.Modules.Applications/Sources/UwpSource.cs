@@ -16,9 +16,13 @@ internal static class UwpSource
         var psi = new ProcessStartInfo
         {
             FileName  = "powershell.exe",
-            Arguments = "-NoProfile -NonInteractive -Command \"Get-StartApps | ConvertTo-Csv -NoTypeInformation\"",
+            // Windows PowerShell writes to a pipe in the OEM code page by default, so
+            // "Configuración" arrived as "Configuraci¢n". Force UTF-8 on both ends.
+            Arguments = "-NoProfile -NonInteractive -Command \"[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-StartApps | ConvertTo-Csv -NoTypeInformation\"",
             RedirectStandardOutput = true,
-            RedirectStandardError  = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            // stderr is not read; redirecting it without draining can block the child.
+            RedirectStandardError  = false,
             UseShellExecute        = false,
             CreateNoWindow         = true,
         };

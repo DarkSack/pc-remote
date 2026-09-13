@@ -48,7 +48,7 @@ public sealed class CommandRouter
         catch (Exception ex)
         {
             _logger.LogError(ex, "Handler for {Domain}.{Action} threw", req.Domain, req.Action);
-            return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, ex.Message);
+            return CommandResponse.FromException(req.Id, ex);
         }
     }
 }

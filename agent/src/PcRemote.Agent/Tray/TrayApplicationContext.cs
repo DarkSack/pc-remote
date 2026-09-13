@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Runtime.Versioning;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows.Forms;
@@ -207,25 +205,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void Post(Action a) => _uiCtx.Post(_ => a(), null);
 
-    private static string GetPrimaryIp()
-    {
-        try
-        {
-            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (nic.OperationalStatus != OperationalStatus.Up) continue;
-                if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-                foreach (var addr in nic.GetIPProperties().UnicastAddresses)
-                {
-                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
-                        !IPAddress.IsLoopback(addr.Address))
-                        return addr.Address.ToString();
-                }
-            }
-        }
-        catch { /* ignore */ }
-        return "0.0.0.0";
-    }
+    // Same pick as the panel's QR, so the tray never advertises a WSL/Hyper-V address.
+    private static string GetPrimaryIp() => PcRemote.Core.Discovery.LanAddress.Guess();
 
     protected override void Dispose(bool disposing)
     {

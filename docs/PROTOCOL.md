@@ -1,193 +1,191 @@
 # Protocolo WebSocket
 
 Transporte: `wss://<host>:47820/ws` (puerto configurable en `appsettings.json`).
-Formato: JSON UTF-8, un mensaje por frame WebSocket. `id` en formato ULID.
+Formato: JSON UTF-8, un mensaje por frame de texto.
+
+Esta página describe **lo que el agente implementa hoy**. Si cambias un
+módulo, actualiza su tabla aquí.
 
 ## Envelope común
 
-Todo mensaje lleva `kind` y `ts` (Unix ms). El resto depende del `kind`.
+Todo mensaje lleva `kind`. `ts` (Unix ms) es opcional al enviar; el agente lo
+pone en lo que envía. `id` lo elige el cliente y el agente lo devuelve tal
+cual (la app Android usa `cmd_<uuid>` y `sub_<uuid>`).
 
 ## 1 · Request / Response
 
-### Cliente → Agente
-
 ```jsonc
-{
-  "kind": "request",
-  "id": "01HFZ1V9YKN6M5",
-  "domain": "system",
-  "action": "shutdown",
-  "params": { "force": false, "timeoutSec": 30 },
-  "ts": 1787500000
-}
+// Cliente → Agente
+{ "kind": "request", "id": "cmd_1", "domain": "input", "action": "mouseMove",
+  "params": { "dx": 12, "dy": -4 } }
+
+// Agente → Cliente (éxito)
+{ "kind": "response", "id": "cmd_1", "success": true, "data": { "moved": true }, "ts": 1787500000000 }
+
+// Agente → Cliente (error)
+{ "kind": "response", "id": "cmd_1", "success": false,
+  "error": { "code": "INVALID_PARAMS", "message": "…", "recoverable": false }, "ts": 1787500000000 }
 ```
 
-### Agente → Cliente (éxito)
+`id`, `domain` y `action` son obligatorios; si falta alguno la respuesta es
+`INVALID_PARAMS`. `domain` no distingue mayúsculas.
 
-```jsonc
-{
-  "kind": "response",
-  "id": "01HFZ1V9YKN6M5",
-  "success": true,
-  "data": { "willShutdownIn": 30 },
-  "ts": 1787500000
-}
-```
-
-### Agente → Cliente (error)
-
-```jsonc
-{
-  "kind": "response",
-  "id": "01HFZ1V9YKN6M5",
-  "success": false,
-  "error": {
-    "code": "PERMISSION_DENIED",
-    "message": "The operation requires elevated privileges.",
-    "recoverable": false
-  },
-  "ts": 1787500000
-}
-```
+**Orden y concurrencia.** Las peticiones de un mismo dominio se ejecutan en
+el orden en que llegaron (los `mouseMove` no se adelantan unos a otros).
+Dominios distintos van en paralelo: un `applications.list` lento no retrasa
+el ratón. Por eso las respuestas de dominios distintos pueden llegar en otro
+orden; emparéjalas por `id`.
 
 ## 2 · Subscribe / Stream / Unsubscribe
 
-Para datos periódicos (stats en tiempo real, cambios de clipboard, etc.).
-
 ```jsonc
-// Cliente inicia
-{ "kind":"subscribe", "id":"sub_stats_1", "domain":"systeminfo", "action":"stats",
+{ "kind": "subscribe", "id": "sub_stats", "domain": "systeminfo", "action": "stats",
   "params": { "intervalMs": 1000 } }
 
-// Agente confirma
-{ "kind":"response", "id":"sub_stats_1", "success":true, "ts":... }
+{ "kind": "response", "id": "sub_stats", "success": true, "data": { "subscribed": true } }
 
-// Agente empieza a mandar N mensajes con mismo id
-{ "kind":"stream", "id":"sub_stats_1",
-  "data": { "cpu": 23, "ram": 48, "gpu": 31, "netIn": 512000, "netOut": 32000 } }
+{ "kind": "stream", "id": "sub_stats", "data": { "cpu": 23.5, "ramPct": 48.1, … }, "ts": … }
 
-// Cliente para
-{ "kind":"unsubscribe", "id":"sub_stats_1" }
+{ "kind": "unsubscribe", "id": "sub_stats" }
 ```
 
-## 3 · Event (push del agente)
+Máximo 16 suscripciones por conexión. Suscribirse con un `id` ya activo
+reemplaza la suscripción anterior.
 
-Sin request previo. El agente emite el evento cuando quiere.
+## 3 · Event
 
-```jsonc
-{ "kind":"event", "domain":"clipboard", "action":"changed",
-  "data": { "text": "...", "size": 123 } }
-```
+Reservado (`kind: "event"`, push sin petición previa). **Todavía no se emite
+ninguno.**
 
 ## 4 · Ping / Pong
 
-Cliente envía ping cada 15 s. Timeout 5 s → cerrar y reconectar.
-
 ```jsonc
-{ "kind":"ping", "ts": 1787500000 }
-{ "kind":"pong", "ts": 1787500000 }
+{ "kind": "ping" }   →   { "kind": "pong", "ts": … }
 ```
 
-## 5 · Bootstrap (mensajes de pairing / auth)
+Además, el servidor manda frames de *keep-alive* de WebSocket cada 15 s
+(`Session.PingIntervalSeconds`), y la app Android usa los ping de OkHttp.
 
-Ver [`PAIRING.md`](PAIRING.md) para el flujo completo. Los 3 kinds:
+## 5 · Bootstrap: emparejamiento y autenticación
 
-- `pair_init` — cliente solicita empezar pairing.
-- `pair_confirm` — cliente envía código introducido por el usuario + su
-  public key Ed25519.
-- `auth` — cada reconexión: cliente envía firma de challenge.
+Flujo completo, límites y revocación en [`PAIRING.md`](PAIRING.md).
+
+| Mensaje (cliente) | Respuesta |
+|---|---|
+| `{ kind: "pair_init" }` | `{ kind: "pair_init_ack", ttlSec }` — el código se muestra en el PC. O `pair_result` con error `RATE_LIMITED`. |
+| `{ kind: "pair_confirm", code, deviceName, publicKey }` | `{ kind: "pair_result", success, deviceId, certFingerprint }` o `{ success: false, error }` |
+| Cualquier `request` / `subscribe` sin sesión | `{ kind: "auth_challenge", nonce }` (hex, 32 bytes). Solo se emite si no hay uno pendiente. |
+| `{ kind: "auth", deviceId, signature }` | `{ kind: "auth_result", success, sessionId }`. Si falla, el agente cierra el socket. |
+
+`publicKey` es la clave pública Ed25519 cruda (32 bytes) en base64;
+`signature` es Ed25519 sobre los bytes del nonce, en base64. `deviceName` se
+recorta a 64 caracteres y se le quitan los caracteres de control.
+
+## Códigos de cierre
+
+| Código | Cuándo |
+|---|---|
+| 1008 | Autenticación fallida, o más de 20 mensajes sin autenticar. |
+| 1009 | Frame demasiado grande: 16 KB antes de autenticar, 4 MB después. |
+| 4001 | Dispositivo revocado o borrado (en caliente o al intentar autenticar). **El cliente no debe reconectar.** |
 
 ## Códigos de error
 
-| Código                | Semántica |
-|-----------------------|-----------|
-| `PERMISSION_DENIED`   | Requiere elevación o el usuario denegó UAC. |
-| `NOT_AUTHENTICATED`   | Sesión inválida o expirada. Cliente debe re-auth. |
-| `INVALID_COMMAND`     | Domain/action desconocido. |
-| `INVALID_PARAMS`      | Params no cumplen esquema. |
-| `NOT_FOUND`           | Recurso no existe (PID, ventana, app). |
-| `TIMEOUT`             | El handler tardó más del máximo permitido. |
-| `INTERNAL_ERROR`      | Bug o excepción inesperada. Ver `command_log`. |
-| `RATE_LIMITED`        | Demasiados comandos en poco tiempo. |
+| Código | Semántica |
+|---|---|
+| `NOT_AUTHENTICATED` | Sesión terminada (p. ej. revocada) o autenticación fallida. |
+| `INVALID_COMMAND` | Dominio o acción desconocidos, o acción no suscribible. |
+| `INVALID_PARAMS` | Faltan parámetros o tienen el tipo equivocado. |
+| `NOT_FOUND` | El recurso no existe (PID, ventana, app, sesión multimedia). |
+| `PERMISSION_DENIED` | Proceso protegido, el propio agente, o sin privilegio de apagado. |
+| `TIMEOUT` | La petición se canceló (conexión cerrándose). |
+| `INTERNAL_ERROR` | Excepción inesperada en el agente. Ver logs. |
+| `RATE_LIMITED` | Demasiados intentos de emparejamiento o de suscripciones. |
+| `PAIRING_FAILED` | Código incorrecto o caducado. |
 
-`recoverable: true` significa que el cliente puede reintentar (ej. TIMEOUT).
-`false` = reintentar no ayuda.
+---
 
-## Comandos por dominio (referencia)
+## Comandos por dominio
+
+Parámetros con `?` son opcionales. Todo lo marcado como *request* se envía con
+`kind: "request"`; lo marcado *subscribe*, con `kind: "subscribe"`.
+
+### `ping`
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `ping` | request | — | `{ pong, agentVersion, sessionId, device, serverTime }` |
 
 ### `system`
 
-| Action     | Params                                | Data         | Destructivo |
-|------------|---------------------------------------|--------------|-------------|
-| `shutdown` | `{ force?: bool, timeoutSec?: int }`  | `{ willShutdownIn }` | ✅ |
-| `restart`  | idem                                  | idem         | ✅ |
-| `sleep`    | —                                     | —            | ❌ |
-| `hibernate`| —                                     | —            | ❌ |
-| `lock`     | —                                     | —            | ❌ |
-| `logoff`   | `{ force?: bool }`                    | —            | ✅ |
+Ninguna acción recibe parámetros. Apagar, reiniciar y cerrar sesión fuerzan
+el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
+
+| Action | Data | Destructivo |
+|---|---|---|
+| `shutdown` | `{ action, initiated }` | ✅ |
+| `restart` | idem | ✅ |
+| `logoff` | idem | ✅ |
+| `sleep` | idem | — |
+| `hibernate` | idem | — |
+| `lock` | idem | — |
 
 ### `systeminfo`
 
-| Action  | Kind         | Params                    | Data |
-|---------|--------------|---------------------------|------|
-| `info`  | request      | —                         | `{ hostname, os, cpuModel, ramTotalMB, gpuModel, uptimeSec }` |
-| `stats` | subscribe    | `{ intervalMs }`          | `{ cpu%, ram%, gpu%, netInBps, netOutBps }` |
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `info` | request | — | `{ hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, ramTotalMB, uptimeSec, timezone }` |
+| `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, ramPct, ramUsedMB, ramTotalMB, ts }` |
 
 ### `input`
 
-| Action        | Kind    | Params |
-|---------------|---------|--------|
-| `mouseMove`   | request | `{ dx: int, dy: int }` (relativo) |
-| `mouseClick`  | request | `{ button: "left"|"right"|"middle", double?: bool }` |
-| `mouseScroll` | request | `{ dy: int }` |
-| `mouseDown`   | request | `{ button }` |
-| `mouseUp`     | request | `{ button }` |
-| `keyPress`    | request | `{ vk: number, modifiers?: string[] }` (`"ctrl"`, `"shift"`, `"alt"`, `"win"`) |
-| `keyType`     | request | `{ text: string }` |
+| Action | Params | Data |
+|---|---|---|
+| `mouseMove` | `{ dx, dy }` relativo (cada uno recortado a ±2000 px) **o** `{ absolute: true, x, y }` con `x`,`y` en [0, 1] | `{ moved }` |
+| `mouseClick` | `{ button?: "left" \| "right" \| "middle", count?: 1–3 }` | `{ clicked, count }` |
+| `mouseScroll` | `{ amount, horizontal?: bool }` — `amount` en muescas (positivo = arriba/derecha) | `{ scrolled }` |
+| `mousePos` | — | `{ x, y, screenW, screenH }` |
+| `keyPress` | `{ keys: "ctrl+shift+esc" }` — nombres en `VirtualKeys.cs` (`enter`, `f5`, `win`, letras, dígitos…) | `{ pressed }` |
+| `keyType` | `{ text }` (máx. 4096 caracteres; se envía como Unicode, no depende del layout) | `{ typed }` |
 
 ### `clipboard`
 
-| Action | Kind      | Params                     | Data |
-|--------|-----------|----------------------------|------|
-| `get`  | request   | —                          | `{ text }` |
-| `set`  | request   | `{ text }`                 | — |
-| `watch`| subscribe | —                          | `{ text }` cada vez que cambia |
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `get` | request | — | `{ text }` |
+| `set` | request | `{ text }` (máx. 1 000 000 caracteres; `""` vacía) | `{ length }` |
+| `clear` | request | — | `{ cleared }` |
+| `watch` | subscribe | — | `{ text, length }` al suscribirse y en cada cambio; `text` va recortado a 4096 caracteres |
 
 ### `applications`
 
-| Action   | Kind    | Params                            | Data |
-|----------|---------|-----------------------------------|------|
-| `list`   | request | `{ favoritesOnly?: bool }`        | `{ apps: [{ id, name, iconBase64 }] }` |
-| `launch` | request | `{ id }`                          | — |
-| `kill`   | request | `{ id }`                          | — |
+| Action | Params | Data |
+|---|---|---|
+| `list` | `{ refresh?: bool, filter? }` — caché de 5 min; `refresh` la rehace | `{ count, applications: [{ id, name, source }] }` con `source` = `startmenu` \| `registry` \| `uwp` |
+| `launch` | `{ id }` (el de `list`) | `{ launched, source }` |
 
 ### `processes`
 
-| Action  | Kind    | Params                                | Data |
-|---------|---------|---------------------------------------|------|
-| `list`  | request | `{ sortBy?: "cpu"|"memory", limit?: int }` | `{ processes: [{ pid, name, cpu%, memMB }] }` |
-| `kill`  | request | `{ pid, force?: bool }`               | — |
+| Action | Params | Data | Destructivo |
+|---|---|---|---|
+| `list` | `{ limit?: 1–500 (50), filter? }` — ordenados por memoria | `{ count, processes: [{ pid, name, workingMB, threads, startTime }] }` | — |
+| `kill` | `{ pid }` — mata el árbol entero; rechaza procesos del sistema y el propio agente | `{ killed, name }` | ✅ |
 
 ### `windows`
 
-| Action     | Kind    | Params                                                | Data |
-|------------|---------|-------------------------------------------------------|------|
-| `list`     | request | —                                                     | `{ windows: [{ hwnd, title, pid, state }] }` |
-| `focus`    | request | `{ hwnd }`                                            | — |
-| `minimize` | request | `{ hwnd }`                                            | — |
-| `maximize` | request | `{ hwnd }`                                            | — |
-| `restore`  | request | `{ hwnd }`                                            | — |
-| `close`    | request | `{ hwnd }`                                            | — |
+| Action | Params | Data |
+|---|---|---|
+| `list` | — | `{ windows: [{ hwnd, title, pid, process, minimized, maximized, x, y, width, height }] }` (solo visibles y con título) |
+| `focus` | `{ hwnd }` — restaura si está minimizada | `{ ok }` |
+| `minimize` / `maximize` / `restore` | `{ hwnd }` | `{ ok }` |
+| `close` | `{ hwnd }` — envía `WM_CLOSE` sin esperar; la app puede preguntar antes de cerrar | `{ ok }` |
 
 ### `media`
 
-| Action      | Kind    | Params            | Data                          |
-|-------------|---------|-------------------|-------------------------------|
-| `play`      | request | —                 | — |
-| `pause`     | request | —                 | — |
-| `next`      | request | —                 | — |
-| `previous`  | request | —                 | — |
-| `volumeGet` | request | —                 | `{ volume: 0-100, muted }`     |
-| `volumeSet` | request | `{ volume 0-100 }`| — |
-| `mute`      | request | `{ on: bool }`    | — |
-| `nowPlaying`| subscribe| —                | `{ title, artist, artworkBase64, isPlaying }` |
+| Action | Params | Data |
+|---|---|---|
+| `play` / `pause` / `playPause` / `next` / `previous` | — | `{ ok, source }`; `NOT_FOUND` si no hay sesión multimedia |
+| `nowPlaying` | — (request, no stream) | `{ active, source, title, artist, album, status }` |
+| `volumeGet` | — | `{ volume: 0–100, mute }` |
+| `volumeSet` | `{ volume: 0–100 }` | `{ volume }` |
+| `volumeMute` | `{ mute?: bool }` — sin parámetro alterna | `{ mute }` |

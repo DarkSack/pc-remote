@@ -1,56 +1,49 @@
 # MVP
 
-## Windows Agent
+Leyenda: ✅ hecho · ⏳ pendiente · ✂️ descartado.
 
-- ✅ Kestrel + `wss://` con cert autofirmado generado en primer arranque.
-- ✅ Tray icon (WinForms NotifyIcon): estado + "Manage devices" + "Exit".
-- ✅ Pairing (código 6 dígitos + Ed25519 challenge-response).
-- ✅ Command router con reflection de módulos.
-- ✅ **`PcRemote.Modules.System`**: shutdown, restart, sleep, hibernate,
-  lock, logoff.
-- ✅ **`PcRemote.Modules.SystemInfo`**: cpu, ram, disk, hostname, os,
-  uptime; stream de stats cada 1 s.
-- ✅ Serilog → archivo rotable + últimos 200 en memoria visibles desde
-  el tray.
-- ✅ Audit log en SQLite.
+## Agente de Windows
+
+- ✅ Kestrel + `wss://` con certificado autofirmado generado en el primer arranque.
+- ✅ Bandeja (WinForms NotifyIcon): estado, abrir panel, gestionar dispositivos, salir.
+- ✅ Panel web en `localhost`: estado, código + QR de emparejamiento, dispositivos, conexiones, logs.
+- ✅ Emparejamiento (código de 6 dígitos) + challenge-response Ed25519.
+- ✅ Router de comandos con descubrimiento de módulos por reflexión.
+- ✅ **System**: apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión.
+- ✅ **SystemInfo**: hostname, SO, CPU, RAM, uptime; stream de CPU/RAM.
+- ✅ Serilog → fichero diario + últimas 500 líneas en el panel.
+- ⏳ Registro de auditoría en SQLite (la tabla `command_log` existe; no se escribe).
+- ⏳ Disco, GPU y red en SystemInfo.
 
 ## Android
 
-- ✅ Discovery mDNS (con fallback UDP broadcast).
-- ✅ Pairing UI (input código 6 dígitos, feedback claro de éxito/error).
-- ✅ Connection state machine + reconexión con backoff.
-- ✅ Dashboard:
-  - Stream de CPU/RAM cada 1 s.
-  - Info sistema (OS, hostname, uptime).
-  - 8 tiles (system/mouse/keyboard/clipboard/apps/media/windows/processes)
-    — sólo `System` operativo.
-- ✅ Confirmaciones para acciones destructivas.
+- ✅ Descubrimiento mDNS.
+- ✂️ Respaldo por broadcast UDP (mDNS es suficiente en la práctica).
+- ✅ Emparejamiento con código de 6 dígitos y errores claros.
+- ✅ Máquina de estados de conexión con reconexión y backoff.
+- ✅ Dashboard: CPU/RAM en vivo, info del sistema, botones de energía.
+- ✅ Confirmación antes de acciones destructivas.
+- ⏳ Accesos a los demás módulos (ratón, teclado, portapapeles, apps, multimedia).
 
 ## Criterios de aceptación
 
-- [ ] Pairing en <30 s desde el primer arranque.
-- [ ] Puedo apagar la PC desde el teléfono.
-- [ ] Puedo bloquear la PC.
+Sin marcar = no verificado todavía en un móvil real con la app Kotlin.
+
+- [ ] Emparejar en menos de 30 s desde el primer arranque.
+- [ ] Apagar el PC desde el teléfono.
+- [ ] Bloquear el PC.
 - [ ] Reinicio el agente → el móvil se reconecta solo.
 - [ ] Cambio de red y vuelvo → redescubre y reconecta.
-- [ ] Revoco el dispositivo desde el tray → deja de funcionar
-      inmediatamente.
-- [ ] Los comandos aparecen en el audit log.
-- [ ] TLS validado: `openssl s_client` reporta el mismo fingerprint que
-      el que pinneó el móvil.
-- [ ] Un segundo teléfono sin emparejar **no** puede ejecutar comandos.
+- [x] Revoco el dispositivo → deja de funcionar al instante (probado a nivel de protocolo: cierre 4001 y la re-autenticación falla).
+- [ ] Los comandos aparecen en el registro de auditoría.
+- [ ] `openssl s_client` muestra la misma huella que fijó el móvil.
+- [x] Un cliente sin emparejar **no** puede ejecutar comandos (probado a nivel de protocolo).
 
-## Fuera de scope del MVP
+## Fuera del MVP
 
-Estos van en Fase 4+ (ver [`ROADMAP.md`](ROADMAP.md)):
+Implementado después en el agente (Fase 4): ratón/teclado, portapapeles,
+multimedia, ventanas, procesos, lanzador de apps. En el móvil siguen
+pendientes; ver [`ROADMAP.md`](ROADMAP.md).
 
-- Mouse / touchpad
-- Teclado virtual
-- Clipboard read/write y historial
-- Media control (SMTC + volume)
-- Windows management
-- Processes list + kill
-- Applications launcher
-- GPU% y stats extendidas
-- Traducción / macros / custom commands
-- Streaming de pantalla, file manager, acceso internet
+Más adelante: historial de portapapeles, macros, streaming de pantalla,
+gestor de archivos, acceso por Internet.

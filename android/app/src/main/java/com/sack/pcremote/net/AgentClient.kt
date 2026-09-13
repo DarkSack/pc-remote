@@ -313,11 +313,11 @@ class PairingClient(
         val req = Request.Builder().url("wss://$host:$port/ws").build()
 
         ws = client.newWebSocket(req, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
-                ws.send(json.encodeToString(PairInitMsg()))
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send(json.encodeToString(PairInitMsg()))
             }
-            override fun onMessage(ws: WebSocket, text: String) = handle(text)
-            override fun onFailure(ws: WebSocket, t: Throwable, r: Response?) {
+            override fun onMessage(webSocket: WebSocket, text: String) = handle(text)
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 onPhase(PairPhase.ERROR, t.message)
             }
         })

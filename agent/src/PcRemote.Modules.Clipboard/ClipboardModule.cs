@@ -14,9 +14,9 @@ namespace PcRemote.Modules.Clipboard;
 // Como el server WS corre en threads MTA, marshalamos cada acceso
 // a un thread STA on-demand.
 //
-// watch: hace poll cada 500ms comparando hash del contenido. Un
-// approach event-driven con WM_CLIPBOARDUPDATE requiere ventana
-// oculta; el poll es simple y suficiente para MVP.
+// watch: cada 500 ms mira GetClipboardSequenceNumber y solo lee el
+// texto cuando cambió. Un approach event-driven con
+// WM_CLIPBOARDUPDATE requiere ventana oculta; esto basta.
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
 public sealed class ClipboardModule : ICommandModule, IStreamModule
@@ -47,7 +47,7 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         }
         catch (Exception ex)
         {
-            return Task.FromResult(CommandResponse.Fail(req.Id, ErrorCodes.InternalError, ex.Message));
+            return Task.FromResult(CommandResponse.FromException(req.Id, ex));
         }
     }
 
@@ -78,6 +78,7 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         [EnumeratorCancellation] CancellationToken ct)
     {
         if (action != "watch") yield break;
+        uint seq = GetClipboardSequenceNumber();
         string last = SafeRead();
         // Emit initial snapshot so el cliente sabe el estado actual.
         yield return new { text = TruncatePreview(last), length = last.Length };
@@ -85,6 +86,14 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
         while (!ct.IsCancellationRequested)
         {
             try { await Task.Delay(500, ct); } catch (TaskCanceledException) { yield break; }
+
+            // GetClipboardSequenceNumber no necesita STA ni abrir el portapapeles:
+            // antes cada tick creaba un hilo y copiaba el texto entero (hasta MB)
+            // solo para compararlo. Ahora eso pasa únicamente cuando algo cambió.
+            var curSeq = GetClipboardSequenceNumber();
+            if (curSeq == seq) continue;
+            seq = curSeq;
+
             var cur = SafeRead();
             if (!string.Equals(cur, last, StringComparison.Ordinal))
             {
@@ -93,6 +102,9 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
             }
         }
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
 
     private static string SafeRead()
     {

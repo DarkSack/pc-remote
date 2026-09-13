@@ -5,108 +5,133 @@
 ```
 ┌──────────────────────────────────────┐        ┌──────────────────────────────────────┐
 │              ANDROID                 │        │             WINDOWS PC               │
-│   React Native + Expo + TypeScript   │        │         .NET 8 / C# / WinRT          │
+│      Kotlin + Jetpack Compose        │        │        .NET 10 / C# / WinRT          │
 │                                      │        │                                      │
-│  Discovery (mDNS + UDP fallback)     │◄── LAN ┼─► mDNS Publisher                    │
-│  Connection FSM                      │        │   Kestrel + WebSockets (wss)         │
-│  Ed25519 challenge-response          │  wss   │   Session Manager                    │
-│  zustand stores                      │◄═══════╪═► Command Router                    │
-│  expo-router views                   │        │   Audit log (SQLite)                 │
-│  expo-secure-store (private key)     │        │                                      │
+│  Discovery (NsdManager, mDNS)        │◄── LAN ┼─► mDNS publisher                    │
+│  AgentClient (OkHttp, reconexión)    │        │   Kestrel + WebSockets (wss)         │
+│  Ed25519 challenge-response          │  wss   │   Emparejamiento + sesiones          │
+│  Pinning SHA-256 del certificado     │◄═══════╪═► Colas por dominio → CommandRouter │
+│  Credenciales: AES-GCM con clave     │        │   SQLite (dispositivos)              │
+│  en Android Keystore                 │        │                                      │
 └──────────────────────────────────────┘        │   ┌────────────────────────────┐    │
                                                 │   │      ICommandModule[]      │    │
                                                 │   └──────────────┬─────────────┘    │
-                                                │   ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼    │
-                                                │   System  Input  Clipboard  Apps    │
-                                                │   SysInfo  Windows  Processes Media │
+                                                │   System  SystemInfo  Input  Media   │
+                                                │   Clipboard  Windows  Processes Apps │
                                                 │                                      │
-                                                │   Tray UI (WinForms NotifyIcon)      │
-                                                │   Elevation helper (on-demand UAC)   │
+                                                │   Bandeja (WinForms NotifyIcon)      │
+                                                │   Panel web (localhost, HTTP)        │
                                                 └──────────────────────────────────────┘
 ```
 
 ## Componentes
 
-### Agent (`agent/`)
+### Agente (`agent/`)
 
-- **PcRemote.Agent** — entrypoint. WinForms tray, DI/hosting, Serilog.
-- **PcRemote.Core** — framework: WebSocket server (Kestrel), pairing, sesión,
-  router, protocolo, discovery (mDNS), storage (SQLite).
-- **PcRemote.Modules.\*** — implementaciones de `ICommandModule`. El router
-  las descubre por reflection al arrancar. Añadir un módulo = añadir un
-  `.csproj` que implemente la interfaz.
+- **PcRemote.Agent** — punto de entrada. Configura Serilog desde
+  `appsettings.json`, arranca el host y muestra la bandeja.
+- **PcRemote.Core**
+  - `Server/WebSocketServer` — Kestrel con dos puertos: WSS en la LAN para el
+    móvil y HTTP en loopback para el panel.
+  - `Auth/` — `PairingService` (códigos), `SessionManager`, `DeviceRepository`
+    (SQLite), `DeviceAdmin` (revocar/borrar y cortar la conexión viva).
+  - `Router/` — `CommandRouter` e interfaces `ICommandModule` / `IStreamModule`.
+  - `Panel/` — endpoints y HTML del panel, *ring buffer* de logs.
+  - `Discovery/` — publicación mDNS y elección de la IP de la LAN.
+  - `Security/` — certificado autofirmado (se genera una vez y se reutiliza).
+- **PcRemote.Modules.\*** — implementaciones de `ICommandModule`. Core las
+  descubre por reflexión al arrancar.
 
-### Mobile (`mobile/`)
+### Android (`android/`)
 
-- **app/** — vistas con `expo-router` (file-based).
-- **src/net/** — capa de red: discovery, connection FSM, protocolo tipado,
-  crypto (Ed25519 con `@noble/ed25519`).
-- **src/stores/** — zustand para estado global (dispositivos, conexión, stats).
-- **src/storage/** — SQLite (agents cache) y `expo-secure-store`
-  (private keys en Android Keystore).
+- `net/AgentClient` — conexión WSS, autenticación, peticiones, streams,
+  reconexión con backoff. `PairingClient` para el primer emparejamiento.
+- `net/Discovery` — mDNS con `NsdManager`.
+- `net/Crypto` — Ed25519 con BouncyCastle.
+- `data/CredentialsStore` — credenciales por PC.
+- `ui/` — Compose: descubrimiento, emparejamiento y dashboard.
+
+`mobile/` (React Native) está deprecado.
 
 ## Extensibilidad
-
-Cada módulo implementa:
 
 ```csharp
 public interface ICommandModule {
     string Domain { get; }                    // ej. "system"
     IReadOnlyList<CommandDescriptor> Commands { get; }
-    Task<CommandResponse> HandleAsync(
-        CommandRequest req,
-        ClientSession session,
-        CancellationToken ct);
+    Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct);
+}
+
+public interface IStreamModule {              // opcional, para subscribe
+    IReadOnlySet<string> StreamActions { get; }
+    IAsyncEnumerable<object> StartStreamAsync(string action, JsonElement? parameters,
+                                              ClientSession session, CancellationToken ct);
 }
 ```
 
-El `CommandRouter` mantiene un `Dictionary<string, ICommandModule>` populado
-por reflection sobre los assemblies referenciados. Un nuevo dominio (ej.
-`gaming`) = nuevo proyecto + `dotnet add reference`. Sin tocar Core.
+`AgentHost` carga todos los `PcRemote.Modules.*.dll` junto al ejecutable y
+registra cada tipo que implemente `ICommandModule`. Un dominio nuevo es un
+proyecto nuevo referenciado desde `PcRemote.Agent.csproj`; Core no cambia.
+
+Un handler no debería lanzar excepciones por fallos esperados: devuelve
+`CommandResponse.Fail(...)`. Si lanza, `CommandResponse.FromException`
+traduce los errores de lectura de parámetros a `INVALID_PARAMS` y el resto a
+`INTERNAL_ERROR`.
+
+## Concurrencia, por conexión
+
+1. **Un bucle de lectura** recibe los frames en orden.
+2. Cada `request` va a la **cola de su dominio** (256 plazas). Una tarea por
+   dominio las procesa de una en una: el orden dentro de un dominio se
+   respeta y los dominios corren en paralelo. Si una cola se llena, el bucle
+   deja de leer hasta que haya hueco.
+3. Antes de ejecutar cada comando se comprueba que la **sesión sigue viva**:
+   una revocación no deja pasar lo que ya estaba en cola.
+4. **Todos los envíos** pasan por `TrackedConnection.SendAsync`, que los
+   serializa.
 
 ## Seguridad — capas
 
-1. **Transporte**: `wss://` con cert autofirmado por dispositivo. Cliente
-   pinnea fingerprint SHA-256 tras el pairing.
-2. **Identidad**: Ed25519 keypair por dispositivo. `deviceId` (ULID) +
-   `publicKey` almacenados en el agente. Private key en Android Keystore.
-3. **Autenticación**: challenge-response en cada reconexión. El agente
-   envía 32 bytes random; el cliente firma con su private key.
-4. **Autorización**: rol único ("paired device"). Revocación por
-   `deviceId` desde el tray.
-5. **Validación de comandos**: cada handler valida sus parámetros
-   contra un esquema. Nunca se ejecuta un comando arbitrario (`system.*`
-   no acepta strings crudos de shell).
-6. **Rate limiting**: por sesión, tanto para pair attempts como para
-   comandos de alto impacto.
+1. **Transporte**: `wss://` con certificado autofirmado. El móvil fija
+   (*pins*) su SHA-256 al emparejar y rechaza cualquier otro después.
+2. **Identidad**: una clave Ed25519 por dispositivo. El agente guarda la
+   pública; la privada no sale del móvil.
+3. **Autenticación**: challenge-response de un solo uso en cada conexión.
+4. **Autorización**: rol único (dispositivo emparejado). Revocación desde la
+   bandeja o el panel, efectiva al instante (cierre 4001).
+5. **Validación**: cada handler valida sus parámetros. Ningún comando ejecuta
+   texto arbitrario.
+6. **Límites**: códigos de emparejamiento ligados a la IP, bloqueo tras 3
+   fallos, tamaño y número de mensajes antes de autenticar. Ver
+   [`PAIRING.md`](PAIRING.md).
+7. **Panel web**: solo loopback, con comprobación de `Host` (DNS rebinding),
+   de `Sec-Fetch-Site`/`Origin` (CSRF), CSP y todo el contenido escapado.
 
 ## Elevación
 
-- Agente corre como usuario logeado (`asInvoker` en el manifest).
-- Operaciones que requieren admin (kill de proceso de sistema, servicios,
-  registry HKLM en apps) delegan a un helper `PcRemote.Elevated.exe`
-  lanzado con `runas` → UAC visible.
-- No hay servicio Windows persistente elevado.
+- El agente corre como el usuario (`asInvoker`).
+- Nada de lo implementado requiere administrador. Matar procesos de otros
+  usuarios o del sistema simplemente falla.
+- Idea para más adelante: un helper `PcRemote.Elevated.exe` lanzado con
+  `runas` (UAC visible) para operaciones de administrador. No existe todavía.
 
-## Reconexión
-
-Máquina de estados en el mobile:
+## Reconexión (Android)
 
 ```
-DISCONNECTED → DISCOVERING → PAIRING → CONNECTING → CONNECTED
-                                             ↓
-                                       RECONNECTING → CONNECTED
-                                             ↓
-                                          FAILED
+DISCONNECTED → CONNECTING → AUTHENTICATING → CONNECTED
+                   ↑                              ↓ (caída)
+                   └──────── RECONNECTING ◄───────┘
+
+FAILED (sin reintentos): auth rechazada, dispositivo revocado (4001) o
+certificado distinto del emparejado.
 ```
 
-Backoff exponencial: `1 → 2 → 4 → 8 → 16 → 30s (tope)`.
-Ping cada 15 s; timeout 5 s → RECONNECTING.
+Backoff: `1 → 2 → 4 → 8 → 16 → 30 s (tope)`. OkHttp envía ping cada 15 s.
 
-## Streaming vs request/response
+## Tipos de mensaje
 
-Ver [`PROTOCOL.md`](PROTOCOL.md) — hay tres tipos de mensaje:
+Ver [`PROTOCOL.md`](PROTOCOL.md):
 
 - **request/response** — comandos únicos (`system.shutdown`).
-- **subscribe/stream/unsubscribe** — datos periódicos (`systeminfo.stats`).
-- **event** — push del agente sin request previo (`clipboard.changed`).
+- **subscribe/stream/unsubscribe** — datos continuos (`systeminfo.stats`, `clipboard.watch`).
+- **event** — reservado, sin uso todavía.

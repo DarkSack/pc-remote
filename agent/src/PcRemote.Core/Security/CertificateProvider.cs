@@ -31,21 +31,31 @@ public sealed class CertificateProvider
         if (File.Exists(path))
         {
             _logger.LogInformation("Loading existing certificate from {Path}", path);
-            var existing = new X509Certificate2(path, GetOrCreatePassphrase(), X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+            var existing = Load(path, GetOrCreatePassphrase());
             _logger.LogInformation("Cert fingerprint SHA-256: {Fingerprint}", GetFingerprint(existing));
             return existing;
         }
 
         _logger.LogInformation("Generating new self-signed certificate at {Path}", path);
         var pass = GetOrCreatePassphrase();
-        var freshCert = CreateSelfSigned();
-        var bytes = freshCert.Export(X509ContentType.Pfx, pass);
-        File.WriteAllBytes(path, bytes);
-        // Reload from disk so the key material is properly persisted and Kestrel sees it.
-        var reloaded = new X509Certificate2(path, pass, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+        using var freshCert = CreateSelfSigned();
+        File.WriteAllBytes(path, freshCert.Export(X509ContentType.Pfx, pass));
+        // Reload from disk so what Kestrel uses is exactly what later runs will load.
+        var reloaded = Load(path, pass);
         _logger.LogInformation("Cert fingerprint SHA-256: {Fingerprint}", GetFingerprint(reloaded));
         return reloaded;
     }
+
+    /// <summary>
+    /// UserKeySet, without MachineKeySet or PersistKeySet. The old flags wrote the
+    /// private key into the machine key store (C:\ProgramData\...\MachineKeys),
+    /// which a normal user may not be allowed to do, and every start imported the
+    /// PFX again, leaving one more persisted key file behind each time. The PFX on
+    /// disk is the source of truth; the key only needs to live while the agent runs.
+    /// The certificate itself — and its fingerprint — does not change.
+    /// </summary>
+    private static X509Certificate2 Load(string path, string pass) =>
+        X509CertificateLoader.LoadPkcs12FromFile(path, pass, X509KeyStorageFlags.UserKeySet);
 
     private static X509Certificate2 CreateSelfSigned()
     {

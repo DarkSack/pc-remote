@@ -44,8 +44,7 @@ public sealed class SystemModule : ICommandModule
         }
         catch (Exception ex)
         {
-            return Task.FromResult(CommandResponse.Fail(
-                req.Id, ErrorCodes.InternalError, ex.Message));
+            return Task.FromResult(CommandResponse.FromException(req.Id, ex));
         }
     }
 

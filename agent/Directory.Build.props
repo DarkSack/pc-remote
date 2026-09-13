@@ -1,5 +1,10 @@
 <Project>
   <PropertyGroup>
+    <!-- One place for the target. .NET 10 is LTS (supported until Nov 2028);
+         .NET 8 support ends 10 Nov 2026. 19041 = Windows 10 2004, needed by the
+         WinRT media APIs (SMTC). -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -53,6 +53,22 @@ public sealed record CommandResponse(
     public static CommandResponse Fail(string id, string code, string message, bool recoverable = false) =>
         new(MessageKinds.Response, id, false, null, new ErrorInfo(code, message, recoverable),
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+    /// <summary>
+    /// Error response for an exception thrown by a handler. A missing or mistyped
+    /// param surfaces as an exception from JsonElement (GetProperty → KeyNotFound,
+    /// GetInt32 on a string → InvalidOperation, out of range → Format); those are
+    /// the client's fault and must say INVALID_PARAMS, not INTERNAL_ERROR.
+    /// </summary>
+    public static CommandResponse FromException(string id, Exception ex) =>
+        IsParamError(ex)
+            ? Fail(id, ErrorCodes.InvalidParams, $"Missing or invalid params: {ex.Message}")
+            : Fail(id, ErrorCodes.InternalError, ex.Message);
+
+    private static bool IsParamError(Exception ex) =>
+        ex is KeyNotFoundException ||
+        (ex is InvalidOperationException or FormatException &&
+         ex.Source == typeof(System.Text.Json.JsonElement).Assembly.GetName().Name);
 }
 
 public sealed record ErrorInfo(

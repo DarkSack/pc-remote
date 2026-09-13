@@ -60,14 +60,17 @@ propia llave criptográfica.
 1. Cliente abre wss://<host>:47820/ws
 2. Valida certificate fingerprint contra el pinneado
    → si NO coincide: abort, alerta "¿Reinstalaste el agente?"
-3. Agente envía: { kind: "auth_challenge", nonce: <32 bytes random hex> }
-4. Cliente responde: { kind: "auth",
+3. Cliente envía cualquier request (la app manda un `ping.ping` de sondeo)
+4. Agente responde: { kind: "auth_challenge", nonce: <32 bytes random hex> }
+   (un solo nonce pendiente por conexión; se consume al primer `auth`)
+5. Cliente responde: { kind: "auth",
                         deviceId,
                         signature: Ed25519_sign(privateKey, nonce) }
-5. Agente valida firma con publicKey almacenada
-   → OK: sesión creada { sessionId, expiresAt: now + 24h }
-   → FAIL o device revocado: { NOT_AUTHENTICATED } + cerrar socket
-6. Cliente puede enviar comandos normales
+6. Agente valida firma con publicKey almacenada
+   → OK: { auth_result, success: true, sessionId }. La sesión dura lo que
+     dure la conexión (no hay caducidad por tiempo).
+   → FAIL: { NOT_AUTHENTICATED } + cierre 1008 (4001 si está revocado)
+7. Cliente puede enviar comandos normales
 ```
 
 ## Revocación
@@ -90,7 +93,7 @@ sesiones.
 
 ```sql
 CREATE TABLE devices (
-  id            TEXT PRIMARY KEY,              -- ULID
+  id            TEXT PRIMARY KEY,              -- 32 hex: ms Unix + 8 bytes aleatorios
   name          TEXT NOT NULL,
   public_key    BLOB NOT NULL,                 -- 32 bytes Ed25519
   paired_at     INTEGER NOT NULL,
@@ -99,11 +102,14 @@ CREATE TABLE devices (
 );
 ```
 
-### Mobile (Android Keystore vía `expo-secure-store`)
+### Android (`CredentialsStore`)
 
-- `deviceId` (por agente)
-- `privateKey` (bytes crudos Ed25519, base64)
-- `certFingerprint` (SHA-256 del cert del agente)
+Un registro por PC, en JSON cifrado con AES-256-GCM. La clave vive en
+Android Keystore; en `SharedPreferences` solo hay iv + texto cifrado.
+
+- `deviceId`, `privateSeedB64` (semilla Ed25519), `publicKeyB64`
+- `agentHost`, `agentPort`, `agentName`
+- `certFingerprintHex` (SHA-256 del certificado del agente)
 
 ## Rate limiting
 

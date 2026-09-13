@@ -9,7 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +30,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 // ══════════════════════════════════════════════════════════════
 // Dashboard: tiles CPU/RAM (subscribe systeminfo.stats) + info
-// del sistema (request system.info) + botones de power.
+// del sistema (request systeminfo.info) + botones de power.
 // ══════════════════════════════════════════════════════════════
 
 @Composable
@@ -91,7 +91,7 @@ fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Uni
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Atrás", tint = Accent)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Accent)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(info?.hostname ?: creds.agentName, color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)

@@ -14,7 +14,9 @@ public sealed class AgentSettings
 public sealed class PanelSettings
 {
     public bool Enabled { get; init; } = true;
-    public int  Port    { get; init; } = 47821;
+    // Same as appsettings.json. It used to default to 47821, which is also what
+    // the (never implemented) UDP fallback claimed.
+    public int  Port    { get; init; } = 47810;
 }
 
 public sealed class WebSocketSettings
@@ -26,7 +28,6 @@ public sealed class WebSocketSettings
 public sealed class DiscoverySettings
 {
     public string MdnsServiceType { get; init; } = "_pcremote._tcp";
-    public int    UdpFallbackPort { get; init; } = 47821;
 }
 
 public sealed class StorageSettings
@@ -47,6 +48,5 @@ public sealed class PairingSettings
 
 public sealed class SessionSettings
 {
-    public int TokenTtlHours       { get; init; } = 24;
     public int PingIntervalSeconds { get; init; } = 15;
 }

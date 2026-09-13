@@ -89,9 +89,18 @@ public sealed class TrackedConnection : IDisposable
         }
     }
 
+    /// <summary>How long the peer gets to answer our close frame before the socket is torn down.</summary>
+    private static readonly TimeSpan CloseHandshakeTimeout = TimeSpan.FromSeconds(2);
+
     /// <summary>
-    /// Sends a close frame and cancels <see cref="Closing"/> so the receive loop stops
-    /// even if the peer never answers the close handshake.
+    /// Sends a close frame, then cancels <see cref="Closing"/> if the peer has not
+    /// completed the handshake within <see cref="CloseHandshakeTimeout"/>.
+    ///
+    /// The cancel is delayed on purpose. Cancelling right after CloseOutputAsync
+    /// aborted the connection before the frame left the TLS stream: on .NET 10 the
+    /// phone saw 1006 (abnormal) instead of 4001, and 4001 is what tells the app
+    /// it was revoked and must stop reconnecting. Normally the peer answers, the
+    /// receive loop sees its Close and ends by itself well before the timer.
     /// </summary>
     public async Task CloseAsync(WebSocketCloseStatus status, string reason)
     {
@@ -115,7 +124,7 @@ public sealed class TrackedConnection : IDisposable
         }
         finally
         {
-            try { _closing.Cancel(); } catch (ObjectDisposedException) { }
+            try { _closing.CancelAfter(CloseHandshakeTimeout); } catch (ObjectDisposedException) { }
         }
     }
 

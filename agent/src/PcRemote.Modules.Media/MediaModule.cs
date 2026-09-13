@@ -54,7 +54,7 @@ public sealed class MediaModule : ICommandModule
         }
         catch (Exception ex)
         {
-            return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, ex.Message);
+            return CommandResponse.FromException(req.Id, ex);
         }
     }
 
@@ -95,40 +95,46 @@ public sealed class MediaModule : ICommandModule
 
     // ── Volume helpers ───────────────────────────────────────
 
-    private static AudioEndpointVolume GetDefaultDeviceVolume()
+    /// <summary>
+    /// Runs <paramref name="fn"/> against the default output device and releases the
+    /// COM objects afterwards. They used to be created on every volume call and never
+    /// disposed, so each slider move leaked an enumerator and a device.
+    /// </summary>
+    private static T WithDefaultDevice<T>(Func<AudioEndpointVolume, T> fn)
     {
-        var enumerator = new MMDeviceEnumerator();
-        var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-        return device.AudioEndpointVolume;
+        using var enumerator = new MMDeviceEnumerator();
+        using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        return fn(device.AudioEndpointVolume);
     }
 
-    private static CommandResponse VolumeGet(CommandRequest req)
-    {
-        var vol = GetDefaultDeviceVolume();
-        return CommandResponse.Ok(req.Id, new
+    private static CommandResponse VolumeGet(CommandRequest req) =>
+        WithDefaultDevice(vol => CommandResponse.Ok(req.Id, new
         {
             volume = (int)Math.Round(vol.MasterVolumeLevelScalar * 100),
             mute   = vol.Mute,
-        });
-    }
+        }));
 
     private static CommandResponse VolumeSet(CommandRequest req)
     {
         var p = req.Params ?? default;
         var pct = Math.Clamp(p.GetProperty("volume").GetInt32(), 0, 100);
-        var vol = GetDefaultDeviceVolume();
-        vol.MasterVolumeLevelScalar = pct / 100f;
-        return CommandResponse.Ok(req.Id, new { volume = pct });
+        return WithDefaultDevice(vol =>
+        {
+            vol.MasterVolumeLevelScalar = pct / 100f;
+            return CommandResponse.Ok(req.Id, new { volume = pct });
+        });
     }
 
     private static CommandResponse VolumeMute(CommandRequest req)
     {
         var p = req.Params ?? default;
-        var vol = GetDefaultDeviceVolume();
-        // Si viene `mute` explícito, usarlo; sino toggle.
-        bool desired = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("mute", out var m)
-            ? m.GetBoolean() : !vol.Mute;
-        vol.Mute = desired;
-        return CommandResponse.Ok(req.Id, new { mute = desired });
+        return WithDefaultDevice(vol =>
+        {
+            // Si viene `mute` explícito, usarlo; sino toggle.
+            bool desired = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("mute", out var m)
+                ? m.GetBoolean() : !vol.Mute;
+            vol.Mute = desired;
+            return CommandResponse.Ok(req.Id, new { mute = desired });
+        });
     }
 }
