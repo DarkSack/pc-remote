@@ -125,6 +125,10 @@ data class UnsubscribeMsg(val kind: String = MsgKinds.Unsubscribe, val id: Strin
 
 @Serializable
 data class SystemInfo(
+    // Wake-on-LAN data; null on agents older than 0.3.
+    val macAddress: String? = null,
+    val broadcast: String? = null,
+    val lanIp: String? = null,
     val hostname: String,
     val username: String,
     val os: String,
@@ -136,6 +140,29 @@ data class SystemInfo(
     val uptimeSec: Long,
     val timezone: String,
 )
+
+@Serializable
+data class NowPlaying(
+    val active: Boolean = false,
+    val source: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val status: String? = null,
+    val volume: Int? = null,
+    val mute: Boolean? = null,
+    val trackChanged: Boolean = false,
+    val artworkBase64: String? = null,
+)
+
+@Serializable
+data class AppEntry(val id: String, val name: String, val source: String)
+
+@Serializable
+data class AppList(val count: Int = 0, val applications: List<AppEntry> = emptyList())
+
+@Serializable
+data class ClipboardText(val text: String = "", val length: Int = 0)
 
 @Serializable
 data class SystemStats(

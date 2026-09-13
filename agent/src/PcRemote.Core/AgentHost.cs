@@ -47,6 +47,10 @@ public static class AgentHost
         // Storage
         builder.Services.AddSingleton<AgentDatabase>();
         builder.Services.AddHostedService<DatabaseInitializer>();
+        // After DatabaseInitializer: hosted services start in registration order,
+        // and the audit writer purges old rows as soon as it starts.
+        builder.Services.AddSingleton<CommandAuditLog>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<CommandAuditLog>());
 
         // Security / cert
         builder.Services.AddSingleton<CertificateProvider>();

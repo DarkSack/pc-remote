@@ -15,8 +15,8 @@ android {
         applicationId = "com.sack.pcremote"
         minSdk = 26          // Android 8.0
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {
@@ -62,6 +62,11 @@ dependencies {
     // Remove once no install from before 0.2.0 is left.
     implementation("androidx.security:security-crypto:1.1.0")
 
+    // QR del panel. El escáner lo pone Google Play services: sin permiso de cámara
+    // en la app y sin meter un modelo de ML en el APK. Sin Play services queda el
+    // emparejamiento manual con código.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
     // Cliente WebSocket + cert pinning.
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
 
@@ -76,4 +81,7 @@ dependencies {
 
     // Debug-only Compose tooling.
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // JVM unit tests for logic that does not need a device (QR parsing, WoL packets).
+    testImplementation("junit:junit:4.13.2")
 }

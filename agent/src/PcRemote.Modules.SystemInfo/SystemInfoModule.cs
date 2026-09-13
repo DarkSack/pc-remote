@@ -88,8 +88,14 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
     private static CommandResponse GetInfo(string id)
     {
         var mem = GetMemoryStatus();
+        var lan = PcRemote.Core.Discovery.LanAddress.GuessInterface();
         return CommandResponse.Ok(id, new
         {
+            // For Wake-on-LAN: the phone keeps these so it can wake the PC later,
+            // when there is no agent to ask.
+            macAddress = lan.MacAddress,
+            broadcast  = lan.Broadcast,
+            lanIp      = lan.Address,
             hostname   = Environment.MachineName,
             username   = Environment.UserName,
             os         = GetOsName(),

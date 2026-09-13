@@ -33,6 +33,7 @@ namespace PcRemote.Core.Panel;
 //   GET  /api/connections → sesiones WS activas
 //   POST /api/pair/start  → genera código 6 dígitos + payload QR
 //   GET  /api/pair/qr?data=... → PNG del QR
+//   GET  /api/audit     → últimos comandos ejecutados (sin parámetros ni input continuo)
 //   GET  /api/logs      → últimas líneas del ring buffer
 // ══════════════════════════════════════════════════════════════
 public static class PanelEndpoints
@@ -206,6 +207,12 @@ public static class PanelEndpoints
             using var png = new PngByteQRCode(qr);
             var bytes = png.GetGraphic(pixelsPerModule: 8);
             return Results.File(bytes, "image/png");
+        });
+
+        app.MapGet("/api/audit", (HttpContext ctx, PcRemote.Core.Storage.CommandAuditLog audit, int? limit) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return Results.Json(audit.Recent(limit ?? 100), Json);
         });
 
         app.MapGet("/api/logs", (HttpContext ctx, int? limit) =>

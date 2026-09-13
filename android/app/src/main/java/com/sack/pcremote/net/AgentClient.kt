@@ -181,7 +181,7 @@ class AgentClient(private val creds: AgentCredentials) {
             }
             MsgKinds.Response -> {
                 val id = root["id"]?.jsonPrimitive?.content ?: return
-                if (id == "__probe__") return
+                if (id == "__probe__" || id.startsWith("fire_")) return
                 val res = json.decodeFromJsonElement<ResponseMsg>(root)
                 pending.remove(id)?.complete(res)
             }
@@ -226,6 +226,22 @@ class AgentClient(private val creds: AgentCredentials) {
         return withTimeoutOrNull(timeoutMs) { deferred.await() }
             ?: run { pending.remove(id); throw RuntimeException("Timeout $domain.$action") }
     }
+
+    /**
+     * Fire-and-forget request for continuous input (pointer moves, scroll). No
+     * pending entry and no timeout: at 60 moves a second, waiting on each answer
+     * would only add latency and fill `pending`. The response still arrives and is
+     * simply ignored. Returns false when not connected.
+     */
+    fun send(domain: String, action: String, params: JsonElement? = null): Boolean {
+        if (_state.value != ConnectionState.CONNECTED) return false
+        return ws?.send(json.encodeToString(RequestMsg(
+            kind = MsgKinds.Request, id = "fire_${counter.incrementAndGet()}",
+            domain = domain, action = action, params = params,
+        ))) ?: false
+    }
+
+    private val counter = java.util.concurrent.atomic.AtomicLong()
 
     fun subscribe(
         domain: String, action: String, params: JsonElement? = null,
@@ -275,11 +291,22 @@ class AgentClient(private val creds: AgentCredentials) {
     }
 }
 
-/** Cliente "one-shot" para pairing (sin credenciales pre-existentes). */
+/**
+ * Cliente "one-shot" para pairing (sin credenciales pre-existentes).
+ *
+ * Dos modos:
+ * - Manual (`expectedFingerprint == null`): manda `pair_init`, el PC muestra un
+ *   código y el usuario lo teclea. El certificado se acepta a ciegas y solo se
+ *   comprueba contra lo que declare el propio PC (trust-on-first-use).
+ * - QR (`expectedFingerprint` viene del QR del panel): el código ya lo trae el
+ *   QR, así que no hay `pair_init` (no salta notificación en el PC), y el
+ *   handshake TLS se corta si el certificado no es exactamente ese.
+ */
 class PairingClient(
     private val host: String,
     private val port: Int,
     private val agentName: String,
+    private val expectedFingerprint: String? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var ws: WebSocket? = null
@@ -294,14 +321,14 @@ class PairingClient(
         onPhase(PairPhase.CONNECTING, null)
         keys = Crypto.generateKeypair()
 
-        // TLS: nothing to pin yet, so any certificate is accepted — but we record
-        // which one. pair_result then reports the agent's fingerprint, and the two
-        // must match (see handle()). This is trust-on-first-use; scanning the QR,
-        // which carries the fingerprint, is the way to close the gap completely.
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-                seenFingerprint = chain.firstOrNull()?.let(::sha256Hex)
+                val got = chain.firstOrNull()?.let(::sha256Hex)
+                seenFingerprint = got
+                if (expectedFingerprint != null && !expectedFingerprint.equals(got, ignoreCase = true)) {
+                    throw CertificateMismatchException("QR fingerprint $expectedFingerprint, server presented $got")
+                }
             }
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
@@ -314,11 +341,15 @@ class PairingClient(
 
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send(json.encodeToString(PairInitMsg()))
+                if (expectedFingerprint == null) webSocket.send(json.encodeToString(PairInitMsg()))
+                else onPhase(PairPhase.WAITING_CODE, null)
             }
             override fun onMessage(webSocket: WebSocket, text: String) = handle(text)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onPhase(PairPhase.ERROR, t.message)
+                val mismatch = generateSequence(t) { it.cause }.any { it is CertificateMismatchException }
+                onPhase(PairPhase.ERROR,
+                    if (mismatch) "El PC de esa dirección no tiene el certificado del QR. Genera un QR nuevo en el panel y vuelve a escanearlo."
+                    else t.message)
             }
         })
     }

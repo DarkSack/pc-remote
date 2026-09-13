@@ -36,6 +36,9 @@ data class AgentCredentials(
     val agentPort: Int,
     val agentName: String,
     val certFingerprintHex: String,
+    // Learned from systeminfo.info after connecting; needed to wake the PC later.
+    val macAddress: String? = null,
+    val broadcast: String? = null,
 )
 
 class CredentialsStore(private val context: Context) {

@@ -140,6 +140,16 @@
     <div id="conns-body"><div class="empty">Sin conexiones</div></div>
   </section>
 
+  <!-- Auditoría -->
+  <section class="card wide">
+    <div class="flex-between">
+      <h2 style="margin:0">Comandos ejecutados</h2>
+      <button class="ghost small" onclick="refreshAudit()">Refrescar</button>
+    </div>
+    <p class="sub" style="margin-top:0">Últimos 30 días. No incluye el movimiento continuo del ratón ni el contenido de lo escrito.</p>
+    <div id="audit-body"><div class="empty">Cargando…</div></div>
+  </section>
+
   <!-- Logs -->
   <section class="card wide">
     <div class="flex-between">
@@ -277,6 +287,32 @@ async function refreshConns() {
   } catch (e) {}
 }
 
+async function refreshAudit() {
+  try {
+    const rows = await api("/api/audit?limit=100");
+    if (!rows.length) {
+      $("audit-body").innerHTML = '<div class="empty">Todavía no hay comandos registrados.</div>';
+      return;
+    }
+    const body = rows.map(r => `
+      <tr>
+        <td>${esc(fmtDate(r.ts))}</td>
+        <td>${r.deviceName ? esc(r.deviceName) : `<span class="mono">${esc(String(r.deviceId ?? "").slice(0, 8))}… (borrado)</span>`}</td>
+        <td class="mono">${esc(r.domain)}.${esc(r.action)}</td>
+        <td>${r.success
+          ? '<span class="badge"><span class="dot"></span>OK</span>'
+          : `<span class="badge danger"><span class="dot"></span>${esc(r.errorCode ?? "ERROR")}</span>`}</td>
+      </tr>
+    `).join("");
+    $("audit-body").innerHTML = `
+      <table>
+        <thead><tr><th>Cuándo</th><th>Dispositivo</th><th>Comando</th><th>Resultado</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    `;
+  } catch (e) { $("audit-body").innerHTML = '<div class="empty">Error cargando la auditoría</div>'; }
+}
+
 async function refreshLogs() {
   try {
     const lines = await api("/api/logs?limit=100");
@@ -331,7 +367,7 @@ function toggleAutoRefresh() {
     clearInterval(autoTimer); autoTimer = null;
     $("auto-label").textContent = "Auto: OFF";
   } else {
-    autoTimer = setInterval(() => { refreshLogs(); refreshConns(); refreshStatus(); }, 3000);
+    autoTimer = setInterval(() => { refreshLogs(); refreshConns(); refreshStatus(); refreshAudit(); }, 3000);
     $("auto-label").textContent = "Auto: ON";
   }
 }
@@ -341,6 +377,7 @@ refreshStatus();
 refreshDevices();
 refreshConns();
 refreshLogs();
+refreshAudit();
 setInterval(refreshConns, 5000);
 </script>
 </body>

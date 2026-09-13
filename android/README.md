@@ -18,13 +18,35 @@ con la New Architecture.
 ## Estado
 
 - ✅ Descubrimiento: PCs emparejados + escaneo mDNS (varios PCs a la vez)
-- ✅ Emparejamiento: código de 6 dígitos + nombre del dispositivo; comprueba
-  que la huella que declara el PC coincide con la del certificado de la conexión
+- ✅ Emparejamiento por **QR** del panel (certificado fijado desde el inicio) o
+  con código de 6 dígitos (comprueba que la huella declarada coincide con la
+  de la conexión)
 - ✅ Dashboard: CPU/RAM en tiempo real, info del sistema, energía
+- ✅ **Touchpad**: arrastrar = mover, toque = clic, 2 dedos = clic derecho y
+  scroll, mantener = arrastrar; sensibilidad ajustable
+- ✅ **Teclado**: escribir texto, teclas especiales, atajos y F1–F12
+- ✅ **Multimedia**: lo que suena (con carátula), play/pausa/pistas, volumen
+- ✅ **Apps**: lista con búsqueda, abrir con un toque
+- ✅ **Portapapeles** en los dos sentidos
+- ✅ **Wake-on-LAN**: botón de encendido en la lista (aparece tras la primera
+  conexión, cuando la app ya conoce la MAC del PC)
 - ✅ Reconexión con backoff; no reintenta si el PC revocó el dispositivo o
   cambió de certificado
-- ⏳ Touchpad, teclado, multimedia, apps y portapapeles
-- ⏳ Escáner del QR del panel
+- ⚠️ Todo lo anterior compila y la lógica pura tiene tests, pero **no se ha
+  probado aún en un móvil real**
+
+El escáner de QR lo proporciona Google Play services (sin permiso de cámara
+en la app). En móviles sin Play services, empareja con el código.
+
+Wake-on-LAN solo funciona si está activado en la BIOS/UEFI y en el adaptador
+de red del PC; con el "inicio rápido" de Windows algunos equipos no despiertan
+desde apagado.
+
+## Tests
+
+```powershell
+.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan (JVM, sin dispositivo)
+```
 
 ### Migración de credenciales (0.1.0 → 0.2.0)
 
@@ -84,10 +106,13 @@ android/
             │   ├── Protocol.kt       # tipos del protocolo WSS
             │   ├── Crypto.kt         # Ed25519 vía BouncyCastle
             │   ├── Discovery.kt      # NsdManager mDNS
-            │   └── AgentClient.kt    # WSS + pinning + streams; PairingClient
+            │   ├── AgentClient.kt    # WSS + pinning + streams; PairingClient
+            │   ├── QrPayload.kt      # QR del panel
+            │   └── WakeOnLan.kt      # magic packet
             ├── data/CredentialsStore.kt  # AES-GCM con Android Keystore
             └── ui/
                 ├── PcRemoteApp.kt    # NavHost
                 ├── theme/Theme.kt
-                └── screens/{Discovery,Pair,Dashboard}Screen.kt
+                ├── screens/{Discovery,Pair,Dashboard}Screen.kt
+                └── remote/           # Touchpad, Keyboard, Media, Apps, Clipboard (paneles del dashboard)
 ```

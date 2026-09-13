@@ -17,9 +17,14 @@ namespace PcRemote.Modules.Media;
 // (IAudioEndpointVolume vía COM).
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class MediaModule : ICommandModule
+public sealed class MediaModule : ICommandModule, IStreamModule
 {
     public string Domain => "media";
+
+    public IReadOnlySet<string> StreamActions { get; } = new HashSet<string> { "nowPlaying" };
+
+    /// <summary>Artwork larger than this is not sent (JPEG/PNG thumbnails are usually 10–100 KB).</summary>
+    private const int MaxArtworkBytes = 512 * 1024;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
@@ -91,6 +96,106 @@ public sealed class MediaModule : ICommandModule
             album    = props?.AlbumTitle,
             status   = pb?.PlaybackStatus.ToString(),
         });
+    }
+
+    // ── Stream: nowPlaying ───────────────────────────────────
+
+    /// <summary>
+    /// Pushes track / playback / volume changes. Polls once a second and only
+    /// sends when something changed. The artwork travels only when the track
+    /// changes (base64), never on every tick; `artworkBase64` is null otherwise and
+    /// `trackChanged` tells the client whether to replace or keep its image.
+    /// </summary>
+    public async IAsyncEnumerable<object> StartStreamAsync(
+        string action, JsonElement? parameters, ClientSession session,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        if (action != "nowPlaying") yield break;
+
+        string? lastTrack = null;
+        string? lastState = null;
+
+        while (!ct.IsCancellationRequested)
+        {
+            var snap = await SnapshotAsync();
+            var track = snap.Active ? $"{snap.Source}|{snap.Title}|{snap.Artist}|{snap.Album}" : "";
+            var state = $"{track}|{snap.Status}|{snap.Volume}|{snap.Mute}";
+
+            if (state != lastState)
+            {
+                var trackChanged = track != lastTrack;
+                string? artwork = null;
+                if (trackChanged && snap.Session is not null)
+                    artwork = await TryReadArtworkAsync(snap.Session);
+
+                lastTrack = track;
+                lastState = state;
+                yield return new
+                {
+                    active = snap.Active,
+                    source = snap.Source,
+                    title  = snap.Title,
+                    artist = snap.Artist,
+                    album  = snap.Album,
+                    status = snap.Status,
+                    volume = snap.Volume,
+                    mute   = snap.Mute,
+                    trackChanged,
+                    artworkBase64 = artwork,
+                };
+            }
+
+            try { await Task.Delay(1000, ct); } catch (TaskCanceledException) { yield break; }
+        }
+    }
+
+    private sealed record Snapshot(
+        GlobalSystemMediaTransportControlsSession? Session, bool Active, string? Source,
+        string? Title, string? Artist, string? Album, string? Status, int? Volume, bool? Mute);
+
+    private static async Task<Snapshot> SnapshotAsync()
+    {
+        int? volume = null;
+        bool? mute = null;
+        try
+        {
+            (volume, mute) = WithDefaultDevice(v => ((int?)(int)Math.Round(v.MasterVolumeLevelScalar * 100), (bool?)v.Mute));
+        }
+        catch { /* no audio device: leave volume unknown */ }
+
+        try
+        {
+            var s = await GetCurrentSessionAsync();
+            if (s is null) return new Snapshot(null, false, null, null, null, null, null, volume, mute);
+            var props = await s.TryGetMediaPropertiesAsync();
+            var pb = s.GetPlaybackInfo();
+            return new Snapshot(s, true, s.SourceAppUserModelId, props?.Title, props?.Artist,
+                props?.AlbumTitle, pb?.PlaybackStatus.ToString(), volume, mute);
+        }
+        catch
+        {
+            // SMTC throws while an app is closing its session; report "nothing playing".
+            return new Snapshot(null, false, null, null, null, null, null, volume, mute);
+        }
+    }
+
+    private static async Task<string?> TryReadArtworkAsync(GlobalSystemMediaTransportControlsSession session)
+    {
+        try
+        {
+            var props = await session.TryGetMediaPropertiesAsync();
+            if (props?.Thumbnail is null) return null;
+            using var stream = await props.Thumbnail.OpenReadAsync();
+            if (stream.Size == 0 || stream.Size > MaxArtworkBytes) return null;
+            using var net = stream.AsStreamForRead();
+            using var ms = new MemoryStream((int)stream.Size);
+            await net.CopyToAsync(ms);
+            return Convert.ToBase64String(ms.GetBuffer(), 0, (int)ms.Length);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ── Volume helpers ───────────────────────────────────────

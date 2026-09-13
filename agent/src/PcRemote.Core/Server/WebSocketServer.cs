@@ -60,6 +60,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     private readonly DeviceRepository  _devices;
     private readonly DeviceAdmin       _deviceAdmin;
     private readonly CommandRouter     _router;
+    private readonly PcRemote.Core.Storage.CommandAuditLog _audit;
     private readonly ILogger<WebSocketServer> _logger;
 
     private WebApplication? _app;
@@ -79,6 +80,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         DeviceRepository devices,
         DeviceAdmin deviceAdmin,
         CommandRouter router,
+        PcRemote.Core.Storage.CommandAuditLog audit,
         ILogger<WebSocketServer> logger)
     {
         _settings    = settings;
@@ -89,6 +91,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _devices     = devices;
         _deviceAdmin = deviceAdmin;
         _router      = router;
+        _audit       = audit;
         _logger      = logger;
     }
 
@@ -130,6 +133,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_pairing);
         builder.Services.AddSingleton(_devices);
         builder.Services.AddSingleton(_deviceAdmin);
+        builder.Services.AddSingleton(_audit);
 
         _app = builder.Build();
 

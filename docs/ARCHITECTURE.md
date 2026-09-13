@@ -39,6 +39,8 @@
   - `Panel/` — endpoints y HTML del panel, *ring buffer* de logs.
   - `Discovery/` — publicación mDNS y elección de la IP de la LAN.
   - `Security/` — certificado autofirmado (se genera una vez y se reutiliza).
+  - `Storage/` — SQLite; `CommandAuditLog` escribe `command_log` en lotes desde
+    una cola, para que auditar nunca frene un comando.
 - **PcRemote.Modules.\*** — implementaciones de `ICommandModule`. Core las
   descubre por reflexión al arrancar.
 
@@ -49,7 +51,11 @@
 - `net/Discovery` — mDNS con `NsdManager`.
 - `net/Crypto` — Ed25519 con BouncyCastle.
 - `data/CredentialsStore` — credenciales por PC.
-- `ui/` — Compose: descubrimiento, emparejamiento y dashboard.
+- `net/QrPayload`, `net/WakeOnLan` — QR del panel y magic packet.
+- `ui/` — Compose: descubrimiento, emparejamiento y dashboard. El dashboard
+  tiene **una sola conexión** que comparten sus secciones (`ui/remote/`:
+  touchpad, teclado, multimedia, apps, portapapeles); cambiar de sección no
+  reconecta ni vuelve a autenticar.
 
 `mobile/` (React Native) está deprecado.
 

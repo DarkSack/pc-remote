@@ -12,7 +12,7 @@ Leyenda: ✅ hecho · ⏳ pendiente · ✂️ descartado.
 - ✅ **System**: apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión.
 - ✅ **SystemInfo**: hostname, SO, CPU, RAM, uptime; stream de CPU/RAM.
 - ✅ Serilog → fichero diario + últimas 500 líneas en el panel.
-- ⏳ Registro de auditoría en SQLite (la tabla `command_log` existe; no se escribe).
+- ✅ Registro de auditoría en SQLite (`command_log`, 30 días, sin parámetros ni input continuo), visible en el panel.
 - ⏳ Disco, GPU y red en SystemInfo.
 
 ## Android
@@ -23,7 +23,8 @@ Leyenda: ✅ hecho · ⏳ pendiente · ✂️ descartado.
 - ✅ Máquina de estados de conexión con reconexión y backoff.
 - ✅ Dashboard: CPU/RAM en vivo, info del sistema, botones de energía.
 - ✅ Confirmación antes de acciones destructivas.
-- ⏳ Accesos a los demás módulos (ratón, teclado, portapapeles, apps, multimedia).
+- ✅ Touchpad, teclado, multimedia, apps y portapapeles (sin probar aún en un móvil real).
+- ✅ Emparejamiento por QR y Wake-on-LAN.
 
 ## Criterios de aceptación
 
@@ -35,7 +36,7 @@ Sin marcar = no verificado todavía en un móvil real con la app Kotlin.
 - [ ] Reinicio el agente → el móvil se reconecta solo.
 - [ ] Cambio de red y vuelvo → redescubre y reconecta.
 - [x] Revoco el dispositivo → deja de funcionar al instante (probado a nivel de protocolo: cierre 4001 y la re-autenticación falla).
-- [ ] Los comandos aparecen en el registro de auditoría.
+- [x] Los comandos aparecen en el registro de auditoría (probado a nivel de protocolo y en el panel).
 - [ ] `openssl s_client` muestra la misma huella que fijó el móvil.
 - [x] Un cliente sin emparejar **no** puede ejecutar comandos (probado a nivel de protocolo).
 

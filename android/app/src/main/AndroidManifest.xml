@@ -13,6 +13,12 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.PcRemote">
 
+        <!-- Ask Play services to download the QR scanner UI at install time, so the
+             first scan does not wait for a module download. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

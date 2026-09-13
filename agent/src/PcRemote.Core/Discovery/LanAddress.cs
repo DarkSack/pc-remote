@@ -4,6 +4,9 @@ using System.Net.Sockets;
 
 namespace PcRemote.Core.Discovery;
 
+/// <summary>The adapter facing the LAN: its IPv4, MAC (for Wake-on-LAN) and subnet broadcast.</summary>
+public sealed record LanInterface(string Address, string? MacAddress, string? Broadcast);
+
 /// <summary>
 /// The IPv4 address a phone on the same Wi-Fi should use to reach this PC.
 ///
@@ -21,11 +24,13 @@ public static class LanAddress
         "vpn", "tap-", "tun", "tailscale", "zerotier", "wireguard", "loopback",
     };
 
-    public static string Guess()
+    public static string Guess() => GuessInterface().Address;
+
+    public static LanInterface GuessInterface()
     {
         try
         {
-            var candidates = NetworkInterface.GetAllNetworkInterfaces()
+            var best = NetworkInterface.GetAllNetworkInterfaces()
                 .Where(ni => ni.OperationalStatus == OperationalStatus.Up &&
                              ni.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
                 .SelectMany(ni =>
@@ -41,20 +46,38 @@ public static class LanAddress
                         .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork &&
                                     !IPAddress.IsLoopback(a.Address) &&
                                     !IsLinkLocal(a.Address))
-                        .Select(a => (a.Address, hasGateway, looksVirtual, isPrivate: IsPrivate(a.Address)));
+                        .Select(a => (ni, a, hasGateway, looksVirtual, isPrivate: IsPrivate(a.Address)));
                 })
                 .OrderByDescending(c => c.hasGateway)
                 .ThenBy(c => c.looksVirtual)
                 .ThenByDescending(c => c.isPrivate)
-                .ToList();
+                .FirstOrDefault();
 
-            if (candidates.Count > 0) return candidates[0].Address.ToString();
+            if (best.ni is not null)
+                return new LanInterface(best.a.Address.ToString(), FormatMac(best.ni), Broadcast(best.a));
         }
         catch (NetworkInformationException)
         {
             // Fall through to loopback.
         }
-        return "127.0.0.1";
+        return new LanInterface("127.0.0.1", null, null);
+    }
+
+    private static string? FormatMac(NetworkInterface ni)
+    {
+        var bytes = ni.GetPhysicalAddress().GetAddressBytes();
+        return bytes.Length == 6 ? string.Join(":", bytes.Select(b => b.ToString("X2"))) : null;
+    }
+
+    private static string? Broadcast(UnicastIPAddressInformation a)
+    {
+        if (a.IPv4Mask is null) return null;
+        var ip = a.Address.GetAddressBytes();
+        var mask = a.IPv4Mask.GetAddressBytes();
+        if (mask.Length != 4) return null;
+        var broadcast = new byte[4];
+        for (int i = 0; i < 4; i++) broadcast[i] = (byte)(ip[i] | ~mask[i]);
+        return new IPAddress(broadcast).ToString();
     }
 
     private static bool IsPrivate(IPAddress ip)

@@ -17,8 +17,8 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 
 | Parte | Hecho | Pendiente |
 |---|---|---|
-| Agente | Los 9 módulos (`system`, `systeminfo`, `input`, `clipboard`, `media`, `windows`, `processes`, `applications`, `ping`), emparejamiento, revocación, panel web con QR | Registro de auditoría (`command_log`), eventos push |
-| Android | Descubrimiento, emparejamiento con código, dashboard de CPU/RAM, info del sistema y botones de energía | Touchpad, teclado, multimedia, apps y portapapeles; escáner de QR |
+| Agente | Los 9 módulos (`system`, `systeminfo`, `input`, `clipboard`, `media`, `windows`, `processes`, `applications`, `ping`), emparejamiento, revocación, panel web con QR y registro de auditoría | Eventos push, notificaciones de Windows |
+| Android | Descubrimiento, emparejamiento por código o QR, dashboard, energía, touchpad, teclado, multimedia, apps, portapapeles, Wake-on-LAN | Probarlo en un móvil real; ventanas y procesos |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

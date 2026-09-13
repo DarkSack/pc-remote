@@ -41,24 +41,27 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Android: AGP 9, Kotlin 2.4, OkHttp 5, credenciales cifradas con
       Android Keystore (sin `security-crypto`), mDNS con varios PCs.
 
-## Fase 5 · Paridad del móvil · ⏳
+## Fase 5 · Paridad del móvil · ✅ en código (sep 2026), ⏳ probar en dispositivo
 
-- [ ] Touchpad (`input.mouseMove` / `mouseClick` / `mouseScroll`).
-- [ ] Teclado virtual (`input.keyType` / `keyPress`).
-- [ ] Multimedia (`media.*`).
-- [ ] Lanzador de apps (`applications.*`).
-- [ ] Portapapeles con `clipboard.watch`.
-- [ ] Escáner del QR del panel (rellena host, puerto, código y huella;
-      cierra el hueco de *trust-on-first-use* del emparejamiento manual).
-- [ ] Borrar `mobile/` cuando haya paridad.
+- [x] Touchpad: mover con aceleración, toque = clic, 2 dedos = clic derecho y
+      scroll suave, mantener = arrastrar (`input.mouseDown/Up`, `mouseScroll.delta`).
+- [x] Teclado: texto (`input.keyType`) + teclas, atajos y F1–F12 (`keyPress`).
+- [x] Multimedia con carátula (`media.nowPlaying` en stream) y volumen.
+- [x] Lanzador de apps con búsqueda.
+- [x] Portapapeles en los dos sentidos (`clipboard.watch` / `set`).
+- [x] Escáner del QR del panel: el certificado se fija desde el primer byte y
+      no hace falta `pair_init`.
+- [ ] Probar todo lo anterior en un móvil real.
+- [ ] Borrar `mobile/` después de esa prueba.
 - [ ] Firmar el APK con un keystore propio.
 
 ## Fase 6 · Extras
 
-- Registro de auditoría (`command_log`).
-- Wake-on-LAN desde el móvil.
-- `media.nowPlaying` como stream, con carátula.
+- [x] Registro de auditoría (`command_log`, 30 días) visible en el panel.
+- [x] Wake-on-LAN desde el móvil (la MAC se aprende al conectar).
+- [x] `media.nowPlaying` como stream, con carátula.
 - Notificaciones de Windows reenviadas al móvil.
+- Ventanas y procesos en el móvil (el agente ya los tiene).
 - Historial de portapapeles con opt-in explícito y cifrado.
 - Macros y presets ("modo juego").
 - Streaming de pantalla (DXGI → H.264 → WebRTC).

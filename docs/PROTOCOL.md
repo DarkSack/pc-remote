@@ -134,7 +134,7 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 
 | Action | Kind | Params | Data |
 |---|---|---|---|
-| `info` | request | — | `{ hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, ramTotalMB, uptimeSec, timezone }` |
+| `info` | request | — | `{ macAddress, broadcast, lanIp, hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, ramTotalMB, uptimeSec, timezone }` — `macAddress` (`AA:BB:…`) y `broadcast` son los del adaptador de la LAN, para Wake-on-LAN |
 | `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, ramPct, ramUsedMB, ramTotalMB, ts }` |
 
 ### `input`
@@ -143,10 +143,14 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 |---|---|---|
 | `mouseMove` | `{ dx, dy }` relativo (cada uno recortado a ±2000 px) **o** `{ absolute: true, x, y }` con `x`,`y` en [0, 1] | `{ moved }` |
 | `mouseClick` | `{ button?: "left" \| "right" \| "middle", count?: 1–3 }` | `{ clicked, count }` |
-| `mouseScroll` | `{ amount, horizontal?: bool }` — `amount` en muescas (positivo = arriba/derecha) | `{ scrolled }` |
+| `mouseDown` / `mouseUp` | `{ button? }` — pulsar sin soltar y soltar, para arrastrar | `{ button, down }` |
+| `mouseScroll` | `{ amount, horizontal?: bool }` en muescas, **o** `{ delta, horizontal?: bool }` en unidades de rueda (120 = una muesca) para scroll suave. Positivo = arriba/derecha | `{ scrolled }` (unidades de rueda) |
 | `mousePos` | — | `{ x, y, screenW, screenH }` |
 | `keyPress` | `{ keys: "ctrl+shift+esc" }` — nombres en `VirtualKeys.cs` (`enter`, `f5`, `win`, letras, dígitos…) | `{ pressed }` |
-| `keyType` | `{ text }` (máx. 4096 caracteres; se envía como Unicode, no depende del layout) | `{ typed }` |
+| `keyType` | `{ text }` (máx. 4096 caracteres; se envía como Unicode, no depende del layout). `\n` y `\t` se pulsan como Enter y Tab; `\r` se ignora | `{ typed }` |
+
+Nota: la app envía `mouseMove` y `mouseScroll` sin esperar respuesta, con `id`
+`fire_<n>`; el agente responde igual y el cliente descarta esas respuestas.
 
 ### `clipboard`
 
@@ -185,7 +189,8 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 | Action | Params | Data |
 |---|---|---|
 | `play` / `pause` / `playPause` / `next` / `previous` | — | `{ ok, source }`; `NOT_FOUND` si no hay sesión multimedia |
-| `nowPlaying` | — (request, no stream) | `{ active, source, title, artist, album, status }` |
+| `nowPlaying` | — como **request** | `{ active, source, title, artist, album, status }` |
+| `nowPlaying` | — como **subscribe** | `{ active, source, title, artist, album, status, volume, mute, trackChanged, artworkBase64 }` al suscribirse y cada vez que algo cambia (se comprueba cada segundo). La carátula solo viaja cuando cambia la pista (`trackChanged: true`); si no, `artworkBase64` es null y el cliente conserva la que tenía. Máx. 512 KB |
 | `volumeGet` | — | `{ volume: 0–100, mute }` |
 | `volumeSet` | `{ volume: 0–100 }` | `{ volume }` |
 | `volumeMute` | `{ mute?: bool }` — sin parámetro alterna | `{ mute }` |

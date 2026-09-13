@@ -25,12 +25,16 @@ fun PairScreen(
     host: String, port: Int, agentName: String,
     store: CredentialsStore,
     onDone: () -> Unit,
+    // From the panel's QR: the code is already known and the certificate is pinned from the start.
+    qrCode: String? = null,
+    qrFingerprint: String? = null,
 ) {
+    val fromQr = qrCode != null && qrFingerprint != null
     var phase by remember { mutableStateOf(PairPhase.CONNECTING) }
     var info  by remember { mutableStateOf<String?>(null) }
-    var code  by remember { mutableStateOf("") }
+    var code  by remember { mutableStateOf(qrCode ?: "") }
     var deviceName by remember { mutableStateOf(android.os.Build.MODEL ?: "Android") }
-    val client = remember { PairingClient(host, port, agentName) }
+    val client = remember { PairingClient(host, port, agentName, if (fromQr) qrFingerprint else null) }
 
     LaunchedEffect(Unit) {
         client.start { p, i ->
@@ -55,7 +59,11 @@ fun PairScreen(
         when (phase) {
             PairPhase.CONNECTING -> Centered { CircularProgressIndicator(color = Accent); Spacer(Modifier.height(12.dp)); Text("Conectando al agente…", color = TextDark) }
             PairPhase.WAITING_CODE -> {
-                Text("Mira la notificación en el PC. Introduce el código de 6 dígitos:", color = DimDark, fontSize = 14.sp)
+                Text(
+                    if (fromQr) "Código leído del QR. Revisa el nombre y confirma:"
+                    else "Mira la notificación en el PC. Introduce el código de 6 dígitos:",
+                    color = DimDark, fontSize = 14.sp,
+                )
                 info?.let { Text(it, color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(

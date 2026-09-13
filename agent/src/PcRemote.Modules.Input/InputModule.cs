@@ -30,6 +30,8 @@ public sealed class InputModule : ICommandModule
     {
         new CommandDescriptor("mouseMove",   "Mover el cursor (relativo o absoluto)"),
         new CommandDescriptor("mouseClick",  "Click de mouse (left/right/middle)"),
+        new CommandDescriptor("mouseDown",   "Pulsar un botón sin soltarlo (arrastrar)"),
+        new CommandDescriptor("mouseUp",     "Soltar un botón"),
         new CommandDescriptor("mouseScroll", "Scroll vertical u horizontal"),
         new CommandDescriptor("mousePos",    "Obtener posición del cursor"),
         new CommandDescriptor("keyPress",    "Combo de teclas (ej: ctrl+shift+esc)"),
@@ -44,6 +46,8 @@ public sealed class InputModule : ICommandModule
             {
                 "mouseMove"   => HandleMouseMove(req),
                 "mouseClick"  => HandleMouseClick(req),
+                "mouseDown"   => HandleMouseButton(req, down: true),
+                "mouseUp"     => HandleMouseButton(req, down: false),
                 "mouseScroll" => HandleMouseScroll(req),
                 "mousePos"    => HandleMousePos(req),
                 "keyPress"    => HandleKeyPress(req),
@@ -90,19 +94,45 @@ public sealed class InputModule : ICommandModule
         }
     }
 
+    private static (uint down, uint up) ButtonFlags(string button) => button.ToLowerInvariant() switch
+    {
+        "left"   => (InputNative.MOUSEEVENTF_LEFTDOWN,   InputNative.MOUSEEVENTF_LEFTUP),
+        "right"  => (InputNative.MOUSEEVENTF_RIGHTDOWN,  InputNative.MOUSEEVENTF_RIGHTUP),
+        "middle" => (InputNative.MOUSEEVENTF_MIDDLEDOWN, InputNative.MOUSEEVENTF_MIDDLEUP),
+        _ => (0, 0),
+    };
+
+    private static string ButtonParam(JsonElement p) =>
+        p.ValueKind == JsonValueKind.Object && p.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
+
+    /// <summary>
+    /// Press or release without the other half. The touchpad uses it for drag:
+    /// hold → mouseDown, move, lift → mouseUp. A client that dies mid-drag leaves
+    /// the button held; the next click releases it, as with a real mouse.
+    /// </summary>
+    private static CommandResponse HandleMouseButton(CommandRequest req, bool down)
+    {
+        var button = ButtonParam(req.Params ?? default);
+        var flags = ButtonFlags(button);
+        if (flags.down == 0)
+            return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, $"Unknown button '{button}'");
+
+        var input = new InputNative.INPUT
+        {
+            type = InputNative.INPUT_MOUSE,
+            U = new InputNative.INPUTUNION { mi = new InputNative.MOUSEINPUT { dwFlags = down ? flags.down : flags.up } },
+        };
+        InputNative.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<InputNative.INPUT>());
+        return CommandResponse.Ok(req.Id, new { button, down });
+    }
+
     private static CommandResponse HandleMouseClick(CommandRequest req)
     {
         var p = req.Params ?? default;
-        var button = p.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
-        var count  = p.TryGetProperty("count",  out var c) ? Math.Clamp(c.GetInt32(), 1, 3) : 1;
+        var button = ButtonParam(p);
+        var count  = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("count", out var c) ? Math.Clamp(c.GetInt32(), 1, 3) : 1;
 
-        (uint down, uint up) flags = button.ToLowerInvariant() switch
-        {
-            "left"   => (InputNative.MOUSEEVENTF_LEFTDOWN,   InputNative.MOUSEEVENTF_LEFTUP),
-            "right"  => (InputNative.MOUSEEVENTF_RIGHTDOWN,  InputNative.MOUSEEVENTF_RIGHTUP),
-            "middle" => (InputNative.MOUSEEVENTF_MIDDLEDOWN, InputNative.MOUSEEVENTF_MIDDLEUP),
-            _ => (0, 0),
-        };
+        var flags = ButtonFlags(button);
         if (flags.down == 0)
             return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, $"Unknown button '{button}'");
 
@@ -119,8 +149,16 @@ public sealed class InputModule : ICommandModule
     private static CommandResponse HandleMouseScroll(CommandRequest req)
     {
         var p = req.Params ?? default;
-        var amount = ClampDelta((int)p.GetProperty("amount").GetDouble());
         var horizontal = p.TryGetProperty("horizontal", out var h) && h.ValueKind == JsonValueKind.True;
+
+        // `delta` = raw wheel units (120 per notch), for smooth touchpad scrolling;
+        // `amount` = whole notches. Precision touchpads send sub-notch deltas too.
+        int wheel;
+        if (p.TryGetProperty("delta", out var d))
+            wheel = Math.Clamp((int)d.GetDouble(), -24_000, 24_000);
+        else
+            wheel = ClampDelta((int)p.GetProperty("amount").GetDouble()) * (int)InputNative.WHEEL_DELTA;
+        var amount = wheel;
 
         var input = new InputNative.INPUT
         {
@@ -130,7 +168,7 @@ public sealed class InputModule : ICommandModule
                 mi = new InputNative.MOUSEINPUT
                 {
                     dwFlags   = horizontal ? InputNative.MOUSEEVENTF_HWHEEL : InputNative.MOUSEEVENTF_WHEEL,
-                    mouseData = unchecked((uint)(amount * (int)InputNative.WHEEL_DELTA)),
+                    mouseData = unchecked((uint)amount),
                 },
             },
         };
@@ -177,6 +215,16 @@ public sealed class InputModule : ICommandModule
         var events = new List<InputNative.INPUT>(text.Length * 2);
         foreach (var ch in text)
         {
+            // A Unicode "\n" is ignored by most apps (no new line in Notepad, no
+            // submit in a chat box). Line breaks and tabs go out as real keys.
+            if (ch == '\r') continue;
+            if (ch is '\n' or '\t')
+            {
+                ushort vk = ch == '\n' ? (ushort)0x0D : (ushort)0x09;
+                events.Add(KeyEvent(vk, 0));
+                events.Add(KeyEvent(vk, InputNative.KEYEVENTF_KEYUP));
+                continue;
+            }
             events.Add(UnicodeEvent(ch, 0));
             events.Add(UnicodeEvent(ch, InputNative.KEYEVENTF_KEYUP));
         }
