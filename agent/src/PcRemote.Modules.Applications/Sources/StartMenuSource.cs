@@ -33,7 +33,7 @@ internal static class StartMenuSource
         }
     }
 
-    private static IEnumerable<string> Roots()
+    public static IEnumerable<string> Roots()
     {
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs");
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");

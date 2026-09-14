@@ -177,10 +177,23 @@ PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 
 ### `applications`
 
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `list` | request | `{ refresh?: bool, filter? }` — `refresh` fuerza un reescaneo ya | `{ version, count, applications: [{ id, name, source }] }` con `source` = `startmenu` \| `registry` \| `uwp`, ordenadas por nombre |
+| `watch` | subscribe | — | La misma forma que `list`, al suscribirse y **cada vez que cambia el catálogo** (se instala o desinstala algo) |
+| `launch` | request | `{ id }` (el de `list`/`watch`) | `{ launched, id, source }`. Solo acepta ids del catálogo |
+
+El catálogo se mantiene solo: vigila las carpetas del menú Inicio (con 3 s de
+espera para agrupar las ráfagas de un instalador) y reescanea todo cada 10 min
+para lo que no deja acceso directo. `version` sube con cada cambio.
+
+### `appicons`
+
+Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene su cola).
+
 | Action | Params | Data |
 |---|---|---|
-| `list` | `{ refresh?: bool, filter? }` — caché de 5 min; `refresh` la rehace | `{ count, applications: [{ id, name, source }] }` con `source` = `startmenu` \| `registry` \| `uwp` |
-| `launch` | `{ id }` (el de `list`) | `{ launched, source }` |
+| `get` | `{ ids: [...] }` (máx. 50) | `{ icons: { <id>: base64 PNG 64×64 con transparencia \| null } }`. Los iconos se guardan en memoria en el agente |
 
 ### `processes`
 

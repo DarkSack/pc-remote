@@ -1,41 +1,37 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
-using PcRemote.Modules.Applications.Sources;
 
 namespace PcRemote.Modules.Applications;
 
 // ══════════════════════════════════════════════════════════════
-// Applications — enumerar apps instaladas (3 fuentes) + launch.
+// Applications — apps instaladas (menú Inicio + registro + Store) y abrirlas.
 //
-// Fuentes:
-//   - Start Menu: .lnk en carpetas Programs (rápido, cubre 95%)
-//   - Registry: HKLM/HKCU\...\Uninstall (apps sin shortcut)
-//   - UWP: Get-StartApps vía PowerShell
+//   list    → request: la lista actual (refresh:true la recalcula ya)
+//   watch   → subscribe: la lista al suscribirse y otra vez cada vez que
+//             cambia (se instala o desinstala algo). Ver AppCatalog.
+//   launch  → request: abre una app por id. Solo ids del catálogo: nunca se
+//             ejecuta una ruta que mande el cliente.
 //
-// Cache en memoria con TTL 5 min. list?refresh=true fuerza recomputo.
-// Deduplicación por nombre normalizado (case-insensitive, trim).
-//
-// Launch: startmenu → Process.Start(lnk); registry → Start exe;
-// uwp → explorer.exe shell:AppsFolder\<id>.
+// Los iconos van por su propio dominio (AppIconsModule): cada dominio tiene su
+// cola, así cargar 50 iconos al hacer scroll no retrasa un "abrir".
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class ApplicationsModule : ICommandModule
+public sealed class ApplicationsModule : ICommandModule, IStreamModule
 {
     public string Domain => "applications";
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("list",   "Enumerar apps instaladas (Start Menu + Registry + UWP)"),
+        new CommandDescriptor("watch",  "Stream: la lista, y de nuevo cada vez que cambia"),
         new CommandDescriptor("launch", "Ejecutar app por id"),
     };
 
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
-    private static readonly object CacheLock = new();
-    private static List<AppEntry>? _cache;
-    private static DateTime _cachedAt;
+    public IReadOnlySet<string> StreamActions { get; } = new HashSet<string> { "watch" };
 
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
     {
@@ -60,25 +56,25 @@ public sealed class ApplicationsModule : ICommandModule
         bool refresh = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("refresh", out var r) && r.ValueKind == JsonValueKind.True;
         string? filter = p.ValueKind == JsonValueKind.Object && p.TryGetProperty("filter", out var f) ? f.GetString() : null;
 
-        var all = GetCached(refresh);
-        var view = all.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(filter))
-            view = view.Where(a => a.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
-
-        var items = view
-            .Select(a => new { id = a.Id, name = a.Name, source = a.Source })
-            .OrderBy(a => a.name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return CommandResponse.Ok(req.Id, new { count = items.Count, applications = items });
+        var all = AppCatalog.GetAll(refresh);
+        IReadOnlyCollection<AppEntry> view = string.IsNullOrWhiteSpace(filter)
+            ? all
+            : all.Where(a => a.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+        return CommandResponse.Ok(req.Id, Payload(view, AppCatalog.Version));
     }
+
+    private static object Payload(IReadOnlyCollection<AppEntry> apps, long version) => new
+    {
+        version,
+        count = apps.Count,
+        applications = apps.Select(a => new { id = a.Id, name = a.Name, source = a.Source }).ToList(),
+    };
 
     private static CommandResponse Launch(CommandRequest req)
     {
         var p = req.Params ?? default;
         var id = p.GetProperty("id").GetString() ?? "";
-        var all = GetCached(refresh: false);
-        var entry = all.FirstOrDefault(a => a.Id == id);
+        var entry = AppCatalog.Find(id);
         if (entry == null)
             return CommandResponse.Fail(req.Id, ErrorCodes.NotFound, $"No application with id '{id}'");
 
@@ -89,42 +85,78 @@ public sealed class ApplicationsModule : ICommandModule
         try { Process.Start(psi)?.Dispose(); }
         catch (Exception ex) { return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, $"Launch failed: {ex.Message}"); }
 
-        return CommandResponse.Ok(req.Id, new { launched = entry.Name, source = entry.Source });
+        return CommandResponse.Ok(req.Id, new { launched = entry.Name, id = entry.Id, source = entry.Source });
     }
 
-    private static List<AppEntry> GetCached(bool refresh)
+    // ── Stream: watch ────────────────────────────────────────
+    public async IAsyncEnumerable<object> StartStreamAsync(
+        string action, JsonElement? parameters, ClientSession session,
+        [EnumeratorCancellation] CancellationToken ct)
     {
-        lock (CacheLock)
+        if (action != "watch") yield break;
+
+        // The first load can take a couple of seconds (PowerShell for Store apps).
+        var apps = await Task.Run(() => AppCatalog.GetAll(), ct);
+        var sent = AppCatalog.Version;
+        yield return Payload(apps, sent);
+
+        while (!ct.IsCancellationRequested)
         {
-            if (!refresh && _cache != null && DateTime.UtcNow - _cachedAt < CacheTtl)
-                return _cache;
-
-            var all = new List<AppEntry>();
-            SafeAppend(all, StartMenuSource.Enumerate);
-            SafeAppend(all, RegistrySource.Enumerate);
-            SafeAppend(all, UwpSource.Enumerate);
-
-            _cache = Dedup(all);
-            _cachedAt = DateTime.UtcNow;
-            return _cache;
+            try { await Task.Delay(1000, ct); } catch (TaskCanceledException) { yield break; }
+            var current = AppCatalog.Version;
+            if (current == sent) continue;
+            sent = current;
+            yield return Payload(AppCatalog.GetAll(), current);
         }
     }
+}
 
-    private static void SafeAppend(List<AppEntry> list, Func<IEnumerable<AppEntry>> source)
-    {
-        try { list.AddRange(source()); } catch { /* una fuente rota no debe tirar todo */ }
-    }
+/// <summary>
+/// `appicons.get { ids: [...] }` → `{ icons: { id: base64 PNG | null } }`, at most
+/// 50 ids per call. A separate domain on purpose: requests of one domain run in
+/// order, and icons loading while scrolling must not delay a launch.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class AppIconsModule : ICommandModule
+{
+    private const int MaxIdsPerRequest = 50;
 
-    private static List<AppEntry> Dedup(IEnumerable<AppEntry> all)
+    public string Domain => "appicons";
+
+    public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
-        // Preferencia: startmenu > registry > uwp (el orden en que se agregan es ese).
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<AppEntry>();
-        foreach (var a in all)
+        new CommandDescriptor("get", "Iconos PNG 64×64 de apps del catálogo"),
+    };
+
+    public async Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
+    {
+        try
         {
-            var key = a.Name.Trim().ToLowerInvariant();
-            if (seen.Add(key)) result.Add(a);
+            if (req.Action != "get")
+                return CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand, $"Unknown action '{req.Action}'");
+
+            var ids = (req.Params ?? default).GetProperty("ids").EnumerateArray()
+                .Select(e => e.GetString())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Select(s => s!)
+                .Distinct()
+                .Take(MaxIdsPerRequest)
+                .ToList();
+
+            var icons = new Dictionary<string, string?>();
+            foreach (var id in ids)
+            {
+                ct.ThrowIfCancellationRequested();
+                var app = AppCatalog.Find(id);
+                var png = app is null ? null : await AppIcons.GetPngAsync(app);
+                icons[id] = png is null ? null : Convert.ToBase64String(png);
+            }
+            return CommandResponse.Ok(req.Id, new { icons });
         }
-        return result;
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            return CommandResponse.FromException(req.Id, ex);
+        }
     }
 }

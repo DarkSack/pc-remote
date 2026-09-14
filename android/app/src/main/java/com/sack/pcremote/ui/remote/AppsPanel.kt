@@ -1,75 +1,174 @@
 package com.sack.pcremote.ui.remote
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sack.pcremote.net.AgentClient
-import com.sack.pcremote.net.AppEntry
-import com.sack.pcremote.net.AppList
-import com.sack.pcremote.net.ConnectionState
+import com.sack.pcremote.data.AppPrefs
+import com.sack.pcremote.net.*
 import com.sack.pcremote.ui.theme.*
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 
 // ══════════════════════════════════════════════════════════════
-// Lanzador: la lista la calcula el agente (menú Inicio + registro + UWP) y
-// la guarda 5 min en caché; el filtro de búsqueda es local, para que
-// escribir no dispare una petición por letra.
+// Lanzador de apps del PC.
+//
+// Dinámico de verdad:
+//   - La lista llega por applications.watch: si instalas o desinstalas algo
+//     en el PC, aparece o desaparece aquí sin tocar nada.
+//   - Iconos reales, pedidos solo para las filas que se ven y en lotes
+//     (appicons.get, hasta 40 por petición cada ~120 ms), guardados en
+//     memoria mientras la pantalla del PC esté abierta.
+//   - Favoritas (estrella) y recientes (lo último que abriste), por PC.
 // ══════════════════════════════════════════════════════════════
 
 private val json = Json { ignoreUnknownKeys = true }
 
-/** applications.list runs PowerShell on a cold cache; a few seconds is normal. */
-private const val LIST_TIMEOUT_MS = 30_000L
+private const val FIRST_LOAD_TIMEOUT_MS = 30_000L
+private const val ICON_BATCH = 40
+private const val ICON_BATCH_DELAY_MS = 120L
+
+/**
+ * Loads icons on demand. `request(id)` is cheap and idempotent: ids already
+ * loaded or in flight are ignored; the rest are batched into appicons.get.
+ */
+private class IconLoader(private val client: AgentClient) {
+    val icons = mutableStateMapOf<String, ImageBitmap?>()
+    private val requested = HashSet<String>()
+    private val queue = Channel<String>(Channel.UNLIMITED)
+
+    fun request(id: String) {
+        if (id in icons || !requested.add(id)) return
+        queue.trySend(id)
+    }
+
+    /** Forget failed/unknown ids after a reconnect so they are retried. */
+    fun resetPending() {
+        requested.retainAll(icons.keys)
+    }
+
+    suspend fun run() {
+        while (true) {
+            val first = queue.receive()
+            delay(ICON_BATCH_DELAY_MS) // let the rows that just scrolled in queue up too
+            val batch = mutableListOf(first)
+            while (batch.size < ICON_BATCH) batch += queue.tryReceive().getOrNull() ?: break
+
+            val res = runCatching {
+                client.request("appicons", "get", buildJsonObject { putJsonArray("ids") { batch.forEach { add(it) } } })
+            }.getOrNull()
+            if (res?.success != true || res.data == null) {
+                batch.forEach { requested.remove(it) } // not connected: retry when the row shows again
+                continue
+            }
+            val map = runCatching { json.decodeFromJsonElement(AppIcons.serializer(), res.data).icons }.getOrDefault(emptyMap())
+            for (id in batch) {
+                icons[id] = map[id]?.let { b64 ->
+                    runCatching {
+                        val bytes = Base64.decode(b64, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                }
+            }
+        }
+    }
+}
 
 @Composable
-fun AppsPanel(client: AgentClient, state: ConnectionState) {
+fun AppsPanel(client: AgentClient, state: ConnectionState, pcFingerprint: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember(pcFingerprint) { AppPrefs(ctx.applicationContext, pcFingerprint) }
+    val loader = remember(client) { IconLoader(client) }
+
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
-    var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var favorites by remember { mutableStateOf(prefs.favorites()) }
+    var recents by remember { mutableStateOf(prefs.recents()) }
 
-    suspend fun load(refresh: Boolean) {
-        loading = true
-        error = null
-        val res = runCatching {
-            client.request("applications", "list", buildJsonObject { put("refresh", refresh) }, timeoutMs = LIST_TIMEOUT_MS)
-        }
-        loading = false
-        val r = res.getOrNull()
-        if (r?.success == true && r.data != null) {
-            apps = runCatching { json.decodeFromJsonElement(AppList.serializer(), r.data).applications }.getOrElse { emptyList() }
-        } else {
-            error = r?.error?.message ?: res.exceptionOrNull()?.message ?: "Error desconocido"
-        }
-    }
+    LaunchedEffect(loader) { loader.run() }
 
+    // Live list. Re-subscribes on every reconnect (streams die with the socket).
     LaunchedEffect(state) {
-        if (state == ConnectionState.CONNECTED && apps == null) load(refresh = false)
+        if (state != ConnectionState.CONNECTED) return@LaunchedEffect
+        loader.resetPending()
+        error = null
+        val sub = client.subscribe("applications", "watch") { data ->
+            val list = runCatching { json.decodeFromJsonElement(AppList.serializer(), data) }.getOrNull() ?: return@subscribe
+            apps = list.applications
+            error = null
+            val ids = list.applications.mapTo(HashSet()) { it.id }
+            prefs.prune(ids)
+            favorites = prefs.favorites()
+            recents = prefs.recents()
+        }
+        try {
+            // The first snapshot can take a few seconds (the PC lists Store apps via PowerShell).
+            if (apps == null && withTimeoutOrNull(FIRST_LOAD_TIMEOUT_MS) { while (apps == null) delay(200) } == null) {
+                error = "El PC no respondió con la lista de apps."
+            }
+            awaitCancellation()
+        } finally {
+            sub.cancel()
+        }
     }
 
-    val visible = remember(apps, query) {
-        val q = query.trim()
-        apps.orEmpty().filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
+    fun launch(app: AppEntry) {
+        scope.launch {
+            val r = runCatching { client.request("applications", "launch", buildJsonObject { put("id", app.id) }) }
+            val ok = r.getOrNull()?.success == true
+            if (ok) recents = prefs.addRecent(app.id)
+            Toast.makeText(ctx,
+                if (ok) "Abriendo ${app.name} en el PC"
+                else "No se pudo abrir: ${r.getOrNull()?.error?.message ?: r.exceptionOrNull()?.message}",
+                Toast.LENGTH_SHORT).show()
+        }
     }
+
+    val all = apps.orEmpty()
+    val byId = remember(all) { all.associateBy { it.id } }
+    val q = query.trim()
+    val filtered = remember(all, q) { if (q.isEmpty()) all else all.filter { it.name.contains(q, ignoreCase = true) } }
+    val favoriteApps = remember(byId, favorites) { favorites.mapNotNull { byId[it] }.sortedBy { it.name.lowercase() } }
+    val recentApps = remember(byId, recents) { recents.mapNotNull { byId[it] } }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -85,46 +184,113 @@ fun AppsPanel(client: AgentClient, state: ConnectionState) {
                     focusedBorderColor = Accent, unfocusedBorderColor = BorderDark,
                 ),
             )
-            IconButton(onClick = { scope.launch { load(refresh = true) } }, enabled = !loading) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Volver a leer las apps del PC", tint = Accent)
+            IconButton(
+                enabled = !refreshing && state == ConnectionState.CONNECTED,
+                onClick = {
+                    // Forces a rescan on the PC; the new list arrives through the stream.
+                    scope.launch {
+                        refreshing = true
+                        runCatching {
+                            client.request("applications", "list", buildJsonObject { put("refresh", true) }, timeoutMs = FIRST_LOAD_TIMEOUT_MS)
+                        }
+                        refreshing = false
+                    }
+                },
+            ) {
+                if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), color = Accent, strokeWidth = 2.dp)
+                else Icon(Icons.Filled.Refresh, contentDescription = "Volver a leer las apps del PC", tint = Accent)
             }
         }
 
         when {
-            loading && apps == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+            apps == null && error == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Accent)
                     Spacer(Modifier.height(8.dp))
                     Text("Leyendo las apps del PC…", color = DimDark, fontSize = 13.sp)
                 }
             }
-            error != null && apps == null -> Text("No se pudo cargar la lista: $error", color = Danger, fontSize = 13.sp)
-            else -> {
-                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent)
-                Text("${visible.size} de ${apps.orEmpty().size}", color = MutedDark, fontSize = 11.sp)
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(visible, key = { it.id }) { app ->
-                        ListItem(
-                            headlineContent = { Text(app.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(sourceLabel(app.source), fontSize = 11.sp) },
-                            colors = ListItemDefaults.colors(containerColor = BgDark, headlineColor = TextDark, supportingColor = MutedDark),
-                            modifier = Modifier.clickable {
-                                scope.launch {
-                                    val r = runCatching {
-                                        client.request("applications", "launch", buildJsonObject { put("id", app.id) })
-                                    }
-                                    val ok = r.getOrNull()?.success == true
-                                    Toast.makeText(ctx,
-                                        if (ok) "Abriendo ${app.name}"
-                                        else "No se pudo abrir: ${r.getOrNull()?.error?.message ?: r.exceptionOrNull()?.message}",
-                                        Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        )
+            apps == null -> Text(error ?: "", color = Danger, fontSize = 13.sp)
+            else -> LazyColumn(Modifier.fillMaxSize()) {
+                if (q.isEmpty() && recentApps.isNotEmpty()) {
+                    item(key = "h-recent") { Header("Recientes") }
+                    item(key = "recent-row") {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+                            items(recentApps, key = { "r-" + it.id }) { app ->
+                                RecentTile(app, loader) { launch(app) }
+                            }
+                        }
                     }
+                }
+                if (q.isEmpty() && favoriteApps.isNotEmpty()) {
+                    item(key = "h-fav") { Header("Favoritas") }
+                    items(favoriteApps, key = { "f-" + it.id }) { app ->
+                        AppRow(app, loader, favorite = true,
+                            onToggleFavorite = { favorites = prefs.toggleFavorite(app.id) },
+                            onClick = { launch(app) })
+                    }
+                }
+                item(key = "h-all") {
+                    Header(if (q.isEmpty()) "Todas (${all.size})" else "${filtered.size} de ${all.size}")
+                }
+                if (filtered.isEmpty()) {
+                    item(key = "empty") { Text("Ninguna app coincide con \"$q\".", color = MutedDark, fontSize = 13.sp, modifier = Modifier.padding(8.dp)) }
+                }
+                items(filtered, key = { "a-" + it.id }) { app ->
+                    AppRow(app, loader, favorite = app.id in favorites,
+                        onToggleFavorite = { favorites = prefs.toggleFavorite(app.id) },
+                        onClick = { launch(app) })
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Header(text: String) {
+    Text(text.uppercase(), color = DimDark, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+}
+
+@Composable
+private fun AppIcon(app: AppEntry, loader: IconLoader, size: Dp) {
+    // Asking only when the row is composed = only for what is on screen (LazyColumn).
+    LaunchedEffect(app.id) { loader.request(app.id) }
+    val icon = loader.icons[app.id]
+    Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(BgAltDark), contentAlignment = Alignment.Center) {
+        if (icon != null) Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize().padding(2.dp))
+        else Icon(Icons.Filled.Apps, contentDescription = null, tint = MutedDark, modifier = Modifier.size(size * 0.55f))
+    }
+}
+
+@Composable
+private fun AppRow(app: AppEntry, loader: IconLoader, favorite: Boolean, onToggleFavorite: () -> Unit, onClick: () -> Unit) {
+    ListItem(
+        leadingContent = { AppIcon(app, loader, 40.dp) },
+        headlineContent = { Text(app.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text(sourceLabel(app.source), fontSize = 11.sp) },
+        trailingContent = {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                     contentDescription = if (favorite) "Quitar de favoritas" else "Añadir a favoritas",
+                     tint = if (favorite) Warn else MutedDark)
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = BgDark, headlineColor = TextDark, supportingColor = MutedDark),
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun RecentTile(app: AppEntry, loader: IconLoader, onClick: () -> Unit) {
+    Column(
+        Modifier.width(76.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AppIcon(app, loader, 48.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(app.name, color = TextDark, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+             textAlign = TextAlign.Center, lineHeight = 13.sp)
     }
 }
 

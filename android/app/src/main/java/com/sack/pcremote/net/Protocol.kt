@@ -159,7 +159,10 @@ data class NowPlaying(
 data class AppEntry(val id: String, val name: String, val source: String)
 
 @Serializable
-data class AppList(val count: Int = 0, val applications: List<AppEntry> = emptyList())
+data class AppList(val version: Long = 0, val count: Int = 0, val applications: List<AppEntry> = emptyList())
+
+@Serializable
+data class AppIcons(val icons: Map<String, String?> = emptyMap())
 
 @Serializable
 data class ClipboardText(val text: String = "", val length: Int = 0)

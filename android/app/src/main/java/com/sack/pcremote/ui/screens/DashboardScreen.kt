@@ -157,7 +157,7 @@ fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Uni
                     Section.Touchpad -> TouchpadPanel(client)
                     Section.Keyboard -> KeyboardPanel(client)
                     Section.Media -> MediaPanel(client, state)
-                    Section.Apps -> AppsPanel(client, state)
+                    Section.Apps -> AppsPanel(client, state, creds.certFingerprintHex)
                     Section.Clipboard -> ClipboardPanel(client, state)
                 }
             }

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>PcRemote.Modules.Applications</RootNamespace>
+    <!-- System.Drawing, to turn shell icons into PNG. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />

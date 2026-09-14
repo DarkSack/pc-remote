@@ -26,7 +26,9 @@ con la New Architecture.
   scroll, mantener = arrastrar; sensibilidad ajustable
 - ✅ **Teclado**: escribir texto, teclas especiales, atajos y F1–F12
 - ✅ **Multimedia**: lo que suena (con carátula), play/pausa/pistas, volumen
-- ✅ **Apps**: lista con búsqueda, abrir con un toque
+- ✅ **Apps**: abrir cualquier app del PC con un toque. La lista se actualiza
+  sola al instalar o desinstalar, con los iconos reales, búsqueda, favoritas
+  (estrella) y recientes, guardadas por PC
 - ✅ **Portapapeles** en los dos sentidos
 - ✅ **Wake-on-LAN**: botón de encendido en la lista (aparece tras la primera
   conexión, cuando la app ya conoce la MAC del PC)
