@@ -70,7 +70,8 @@ public sealed class WindowsModule : ICommandModule
 
             WindowNative.GetWindowThreadProcessId(h, out var pid);
             string procName = "";
-            try { procName = Process.GetProcessById((int)pid).ProcessName; } catch { }
+            // Disposed: each Process holds a handle, and every list leaked one per window.
+            try { using var proc = Process.GetProcessById((int)pid); procName = proc.ProcessName; } catch { }
 
             WindowNative.GetWindowRect(h, out var r);
             items.Add(new

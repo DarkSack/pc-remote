@@ -13,7 +13,9 @@ internal static class StartMenuSource
         {
             if (!Directory.Exists(root)) continue;
             IEnumerable<string> shortcuts;
-            try { shortcuts = Directory.EnumerateFiles(root, "*.lnk", SearchOption.AllDirectories); }
+            // IgnoreInaccessible: with SearchOption.AllDirectories one subfolder without
+            // read access threw halfway through the enumeration and lost the whole source.
+            try { shortcuts = Directory.EnumerateFiles(root, "*.lnk", Options); }
             catch { continue; }
 
             foreach (var lnk in shortcuts)
@@ -22,7 +24,7 @@ internal static class StartMenuSource
                 try { name = Path.GetFileNameWithoutExtension(lnk); }
                 catch { continue; }
                 if (string.IsNullOrWhiteSpace(name)) continue;
-                if (name.Contains("Uninstall", StringComparison.OrdinalIgnoreCase)) continue;
+                // Uninstallers are filtered for every source in AppCatalog.
 
                 yield return new AppEntry(
                     Id:     "startmenu:" + lnk,
@@ -32,6 +34,12 @@ internal static class StartMenuSource
             }
         }
     }
+
+    private static readonly EnumerationOptions Options = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = true,
+    };
 
     public static IEnumerable<string> Roots()
     {

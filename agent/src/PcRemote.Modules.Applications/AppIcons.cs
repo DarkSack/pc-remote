@@ -23,7 +23,9 @@ internal static class AppIcons
 {
     private const int Size = 64;
 
-    private static readonly ConcurrentDictionary<string, byte[]?> Cache = new();
+    // Holds the task, not the bytes: two requests for an icon that is still being
+    // drawn share one extraction instead of queueing it twice.
+    private static readonly ConcurrentDictionary<string, Task<byte[]?>> Cache = new();
     private static readonly BlockingCollection<(string Path, TaskCompletionSource<byte[]?> Done)> Queue = new();
     private static readonly Lazy<Thread> Worker = new(() =>
     {
@@ -33,17 +35,16 @@ internal static class AppIcons
         return t;
     });
 
-    public static async Task<byte[]?> GetPngAsync(AppEntry app)
-    {
-        if (Cache.TryGetValue(app.Id, out var cached)) return cached;
-
-        _ = Worker.Value;
-        var done = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Queue.Add((ParsingName(app), done));
-        var png = await done.Task.ConfigureAwait(false);
-        Cache[app.Id] = png;
-        return png;
-    }
+    public static Task<byte[]?> GetPngAsync(AppEntry app) =>
+        Cache.GetOrAdd(app.Id, id =>
+        {
+            _ = Worker.Value;
+            var done = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            // Launch is the shell parsing name: the .lnk or .exe path, or
+            // "shell:AppsFolder\<AppID>" for Store apps.
+            Queue.Add((app.Launch, done));
+            return done.Task;
+        });
 
     /// <summary>Drops cached icons of apps that no longer exist.</summary>
     public static void Forget(Func<string, bool> gone)
@@ -51,9 +52,6 @@ internal static class AppIcons
         foreach (var id in Cache.Keys)
             if (gone(id)) Cache.TryRemove(id, out _);
     }
-
-    private static string ParsingName(AppEntry app) =>
-        app.Source == "uwp" ? app.Launch /* shell:AppsFolder\<AppID> */ : app.Launch;
 
     private static void Loop()
     {

@@ -107,6 +107,15 @@ public sealed class ProcessesModule : ICommandModule
             proc.Kill(entireProcessTree: true);
             return CommandResponse.Ok(req.Id, new { killed = pid, name });
         }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // Access denied: an elevated process or another user's. Not an agent fault.
+            return CommandResponse.Fail(req.Id, ErrorCodes.PermissionDenied, $"Cannot kill PID {pid}: {ex.Message}");
+        }
+        catch (InvalidOperationException)
+        {
+            return CommandResponse.Fail(req.Id, ErrorCodes.NotFound, $"Process {pid} already exited");
+        }
         finally { proc.Dispose(); }
     }
 

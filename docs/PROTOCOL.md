@@ -185,7 +185,10 @@ PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 
 El catálogo se mantiene solo: vigila las carpetas del menú Inicio (con 3 s de
 espera para agrupar las ráfagas de un instalador) y reescanea todo cada 10 min
-para lo que no deja acceso directo. `version` sube con cada cambio.
+para lo que no deja acceso directo. `version` sube con cada cambio. Si una fuente
+falla al reescanear (p. ej. PowerShell para la Store), se conserva su lista
+anterior en vez de dar sus apps por desinstaladas. Los accesos a desinstaladores
+no se listan. Los ids son únicos.
 
 ### `appicons`
 
@@ -193,7 +196,7 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 
 | Action | Params | Data |
 |---|---|---|
-| `get` | `{ ids: [...] }` (máx. 50) | `{ icons: { <id>: base64 PNG 64×64 con transparencia \| null } }`. Los iconos se guardan en memoria en el agente |
+| `get` | `{ ids: [...] }` (máx. 50) | `{ icons: { <id>: base64 PNG 64×64 con transparencia \| null } }`. `null` = la app no tiene icono (o el id no existe). Un id **ausente** del mapa es que no dio tiempo (5 s por petición): pídelo otra vez más tarde. Los iconos se guardan en memoria en el agente |
 
 ### `processes`
 

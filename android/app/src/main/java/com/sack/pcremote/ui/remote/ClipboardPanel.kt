@@ -90,8 +90,12 @@ fun ClipboardPanel(client: AgentClient, state: ConnectionState) {
             onClick = {
                 scope.launch {
                     // The stream carries a preview (4096 chars); fetch the full text to copy it.
-                    val full = runCatching { client.request("clipboard", "get") }.getOrNull()
-                    val text = full?.data?.let { json.decodeFromJsonElement(ClipboardText.serializer(), it).text } ?: current?.text.orEmpty()
+                    // Decoding inside runCatching too: an exception thrown here, in a
+                    // coroutine with no handler, would crash the app.
+                    val text = runCatching {
+                        client.request("clipboard", "get").data
+                            ?.let { json.decodeFromJsonElement(ClipboardText.serializer(), it).text }
+                    }.getOrNull() ?: current?.text.orEmpty()
                     phoneClipboard.setPrimaryClip(ClipData.newPlainText("PC", text))
                     Toast.makeText(ctx, "Copiado en el móvil", Toast.LENGTH_SHORT).show()
                 }

@@ -78,9 +78,22 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
         if (entry == null)
             return CommandResponse.Fail(req.Id, ErrorCodes.NotFound, $"No application with id '{id}'");
 
-        var psi = entry.Source == "uwp"
-            ? new ProcessStartInfo("explorer.exe", entry.Launch) { UseShellExecute = false, CreateNoWindow = true }
-            : new ProcessStartInfo(entry.Launch) { UseShellExecute = true };
+        var psi = entry.Source switch
+        {
+            // Unquoted on purpose and verified: explorer takes its whole command line,
+            // so ids with spaces ("{…}\DB Browser for SQLite\…exe") already open fine.
+            "uwp" => new ProcessStartInfo("explorer.exe", entry.Launch) { UseShellExecute = false, CreateNoWindow = true },
+            // A .exe from the registry inherited the agent's working directory. Apps
+            // that read config or data files relative to it failed to start or
+            // started without their settings; a shortcut would have set it.
+            "registry" => new ProcessStartInfo(entry.Launch)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(entry.Launch) ?? "",
+            },
+            // A .lnk carries its own working directory; the shell applies it.
+            _ => new ProcessStartInfo(entry.Launch) { UseShellExecute = true },
+        };
 
         try { Process.Start(psi)?.Dispose(); }
         catch (Exception ex) { return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, $"Launch failed: {ex.Message}"); }
@@ -96,17 +109,18 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
         if (action != "watch") yield break;
 
         // The first load can take a couple of seconds (PowerShell for Store apps).
-        var apps = await Task.Run(() => AppCatalog.GetAll(), ct);
-        var sent = AppCatalog.Version;
+        var (apps, sent) = await Task.Run(() => AppCatalog.Snapshot(), ct);
         yield return Payload(apps, sent);
 
         while (!ct.IsCancellationRequested)
         {
             try { await Task.Delay(1000, ct); } catch (TaskCanceledException) { yield break; }
-            var current = AppCatalog.Version;
-            if (current == sent) continue;
-            sent = current;
-            yield return Payload(AppCatalog.GetAll(), current);
+            if (AppCatalog.Version == sent) continue;
+            // List and version from one read: taken separately, a rescan finishing in
+            // between paired the old list with the new version, and the new list was
+            // never sent.
+            (apps, sent) = AppCatalog.Snapshot();
+            yield return Payload(apps, sent);
         }
     }
 }
@@ -120,6 +134,7 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
 public sealed class AppIconsModule : ICommandModule
 {
     private const int MaxIdsPerRequest = 50;
+    private static readonly TimeSpan BatchTimeout = TimeSpan.FromSeconds(5);
 
     public string Domain => "appicons";
 
@@ -143,13 +158,27 @@ public sealed class AppIconsModule : ICommandModule
                 .Take(MaxIdsPerRequest)
                 .ToList();
 
+            var lookups = ids
+                .Select(id => (Id: id, Png: AppCatalog.Find(id) is { } app
+                    ? AppIcons.GetPngAsync(app)
+                    : Task.FromResult<byte[]?>(null)))
+                .ToList();
+
+            // One time budget for the whole batch, and cancellable. Shell extensions can
+            // hang while drawing an icon; an unbounded await held this domain's lane,
+            // and on disconnect the server waits for every lane, so the connection was
+            // never released.
+            try { await Task.WhenAll(lookups.Select(l => l.Png)).WaitAsync(BatchTimeout, ct); }
+            catch (TimeoutException) { /* answer with what is ready */ }
+
+            // Ids still being drawn are left out (not null): null means "this app has
+            // no icon", while a missing id tells the client to ask again later. The
+            // extraction keeps running and fills the cache for that next request.
             var icons = new Dictionary<string, string?>();
-            foreach (var id in ids)
+            foreach (var (id, png) in lookups)
             {
-                ct.ThrowIfCancellationRequested();
-                var app = AppCatalog.Find(id);
-                var png = app is null ? null : await AppIcons.GetPngAsync(app);
-                icons[id] = png is null ? null : Convert.ToBase64String(png);
+                if (!png.IsCompleted) continue;
+                icons[id] = png.IsCompletedSuccessfully && png.Result is { } bytes ? Convert.ToBase64String(bytes) : null;
             }
             return CommandResponse.Ok(req.Id, new { icons });
         }

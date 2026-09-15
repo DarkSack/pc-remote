@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Text.RegularExpressions;
 using PcRemote.Modules.Applications.Sources;
 
 namespace PcRemote.Modules.Applications;
@@ -9,11 +10,11 @@ namespace PcRemote.Modules.Applications;
 //
 // Se mantiene al día solo:
 //   - FileSystemWatcher sobre las carpetas del menú Inicio: instalar o
-//     desinstalar casi cualquier app crea o borra un .lnk ahí. Los eventos
-//     llegan en ráfagas (un instalador toca decenas de ficheros), así que se
-//     espera a 3 s de calma y se recalcula una vez.
-//   - Recalculado periódico cada 10 min para lo que no deja .lnk: entradas
-//     de registro sin acceso directo y apps de la Store.
+//     desinstalar casi cualquier app crea o borra un acceso directo ahí. Los
+//     eventos llegan en ráfagas (un instalador toca decenas de ficheros), así
+//     que se espera a 3 s de calma y se recalcula una vez.
+//   - Recalculado periódico cada 10 min para lo que no deja acceso directo:
+//     entradas de registro y apps de la Store.
 //
 // Cada recálculo que cambia algo sube `Version`; los streams comparan esa
 // versión para saber si tienen que empujar una lista nueva.
@@ -23,6 +24,16 @@ internal static class AppCatalog
 {
     private static readonly TimeSpan Debounce = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan Periodic = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Uninstallers are not apps. Checked on the final name, whatever the source:
+    /// Get-StartApps lists the same "Uninstall X" shortcuts the Start Menu source
+    /// skips, so a per-source filter let them back in through the Store source.
+    /// </summary>
+    // Anchored on purpose: "Uninstall X" / "Desinstalar X" / "X Uninstall" are
+    // shortcuts to an uninstaller, while "Revo Uninstaller" is an app someone wants.
+    private static readonly Regex Uninstaller = new(@"^(uninstall|desinstalar)\b|\b(uninstall|desinstalar)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly object Gate = new();
     private static List<AppEntry> _apps = new();
@@ -35,14 +46,26 @@ internal static class AppCatalog
     private static System.Threading.Timer? _debounceTimer;
     private static System.Threading.Timer? _periodicTimer;
 
-    /// <summary>Increments whenever the set of apps (ids or names) changes.</summary>
-    public static long Version => Interlocked.Read(ref _version);
-
     // Serialises rescans. Kept apart from Gate: a rescan runs PowerShell (~2 s),
     // and holding Gate that long would make every launch wait behind it.
     private static readonly SemaphoreSlim ScanGate = new(1, 1);
 
-    public static IReadOnlyList<AppEntry> GetAll(bool refresh = false)
+    /// <summary>Set when a rescan is wanted; a scan already running picks it up when it finishes.</summary>
+    private static int _dirty;
+
+    /// <summary>Last successful result of each source. Guarded by ScanGate.</summary>
+    private static readonly Dictionary<string, List<AppEntry>> LastGood = new();
+
+    /// <summary>Increments whenever the set of apps (ids or names) changes.</summary>
+    public static long Version => Interlocked.Read(ref _version);
+
+    public static IReadOnlyList<AppEntry> GetAll(bool refresh = false) => Snapshot(refresh).Apps;
+
+    /// <summary>
+    /// The list and the version it belongs to, read together. Reading them apart let
+    /// a stream pair an old list with the new version and never send the new list.
+    /// </summary>
+    public static (IReadOnlyList<AppEntry> Apps, long Version) Snapshot(bool refresh = false)
     {
         EnsureWatching();
         if (!_loaded || refresh)
@@ -54,8 +77,13 @@ internal static class AppCatalog
                 if (!_loaded || refresh) Swap(Scan());
             }
             finally { ScanGate.Release(); }
+
+            // A watcher event that arrived while we held the gate was skipped by the
+            // background refresh; run it now instead of waiting for the next change.
+            if (Volatile.Read(ref _dirty) == 1)
+                ThreadPool.QueueUserWorkItem(_ => RefreshInBackground());
         }
-        lock (Gate) return _apps;
+        lock (Gate) return (_apps, _version);
     }
 
     public static AppEntry? Find(string id)
@@ -64,20 +92,47 @@ internal static class AppCatalog
         lock (Gate) return _byId.GetValueOrDefault(id);
     }
 
+    /// <summary>Caller holds ScanGate.</summary>
     private static List<AppEntry> Scan()
     {
         var all = new List<AppEntry>();
-        SafeAppend(all, StartMenuSource.Enumerate);
-        SafeAppend(all, RegistrySource.Enumerate);
-        SafeAppend(all, UwpSource.Enumerate);
+        all.AddRange(FromSource("startmenu", StartMenuSource.Enumerate));
+        all.AddRange(FromSource("registry", RegistrySource.Enumerate));
+        all.AddRange(FromSource("uwp", UwpSource.Enumerate));
 
         // Preference: startmenu > registry > uwp (the order they are added in).
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Ids are deduplicated too, not only names: the phone keys its list by id,
+        // and two rows with the same key crash a Compose LazyColumn.
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
         var fresh = new List<AppEntry>();
         foreach (var a in all)
-            if (seen.Add(a.Name.Trim())) fresh.Add(a);
+        {
+            var name = a.Name.Trim();
+            if (name.Length == 0 || Uninstaller.IsMatch(name)) continue;
+            if (names.Add(name) && ids.Add(a.Id)) fresh.Add(a);
+        }
         fresh.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.OrdinalIgnoreCase));
         return fresh;
+    }
+
+    /// <summary>
+    /// A source that fails keeps its previous result. Before, a PowerShell hiccup
+    /// during the periodic rescan dropped every Store app from the catalog, and the
+    /// phone, seeing them "uninstalled", deleted them from favorites and recents.
+    /// </summary>
+    private static List<AppEntry> FromSource(string name, Func<IEnumerable<AppEntry>> source)
+    {
+        try
+        {
+            var list = source().ToList();
+            LastGood[name] = list;
+            return list;
+        }
+        catch
+        {
+            return LastGood.GetValueOrDefault(name) ?? new List<AppEntry>();
+        }
     }
 
     private static void Swap(List<AppEntry> fresh)
@@ -90,17 +145,12 @@ internal static class AppCatalog
                 fresh.Where((a, i) => a.Id != _apps[i].Id || a.Name != _apps[i].Name).Any();
 
             _apps = fresh;
-            _byId = byId = fresh.GroupBy(a => a.Id).ToDictionary(g => g.Key, g => g.First());
+            _byId = byId = fresh.ToDictionary(a => a.Id);
             _loaded = true;
             if (!changed) return;
             Interlocked.Increment(ref _version);
         }
         AppIcons.Forget(id => !byId.ContainsKey(id));
-    }
-
-    private static void SafeAppend(List<AppEntry> list, Func<IEnumerable<AppEntry>> source)
-    {
-        try { list.AddRange(source()); } catch { /* una fuente rota no debe tirar todo */ }
     }
 
     private static void EnsureWatching()
@@ -111,12 +161,18 @@ internal static class AppCatalog
             _watching = true;
         }
 
+        // Timers before watchers: an event raised in between would find no timer and be lost.
+        _debounceTimer = new System.Threading.Timer(_ => RefreshInBackground(), null, Timeout.Infinite, Timeout.Infinite);
+        _periodicTimer = new System.Threading.Timer(_ => RefreshInBackground(), null, Periodic, Periodic);
+
         foreach (var root in StartMenuSource.Roots())
         {
             if (!Directory.Exists(root)) continue;
             try
             {
-                var w = new FileSystemWatcher(root, "*.lnk")
+                // No "*.lnk" filter: an uninstaller that deletes a whole folder raises
+                // a single directory event, which that filter never matched.
+                var w = new FileSystemWatcher(root)
                 {
                     IncludeSubdirectories = true,
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
@@ -136,9 +192,6 @@ internal static class AppCatalog
                 // No watcher (e.g. folder permissions): the periodic rescan still covers it.
             }
         }
-
-        _debounceTimer = new System.Threading.Timer(_ => RefreshInBackground(), null, Timeout.Infinite, Timeout.Infinite);
-        _periodicTimer = new System.Threading.Timer(_ => RefreshInBackground(), null, Periodic, Periodic);
     }
 
     private static void ScheduleRefresh() =>
@@ -146,19 +199,27 @@ internal static class AppCatalog
 
     private static void RefreshInBackground()
     {
-        // Never stack two rescans; if one is already running it will see the change.
-        if (!ScanGate.Wait(0)) return;
-        try
+        Interlocked.Exchange(ref _dirty, 1);
+        while (true)
         {
-            Swap(Scan());
-        }
-        catch
-        {
-            // Keep the previous list.
-        }
-        finally
-        {
-            ScanGate.Release();
+            // Never stack two rescans. The one running re-checks _dirty before it ends,
+            // so a change that arrives mid-scan (after it already read the Start Menu)
+            // is not lost until the periodic rescan 10 minutes later.
+            if (!ScanGate.Wait(0)) return;
+            try
+            {
+                while (Interlocked.Exchange(ref _dirty, 0) == 1)
+                {
+                    try { Swap(Scan()); }
+                    catch { /* keep the previous list */ }
+                }
+            }
+            finally
+            {
+                ScanGate.Release();
+            }
+            // Set between our last check and Release, by a caller that found the gate taken.
+            if (Volatile.Read(ref _dirty) == 0) return;
         }
     }
 }

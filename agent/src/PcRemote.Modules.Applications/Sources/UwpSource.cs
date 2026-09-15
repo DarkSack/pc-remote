@@ -11,6 +11,8 @@ namespace PcRemote.Modules.Applications.Sources;
 [SupportedOSPlatform("windows")]
 internal static class UwpSource
 {
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+
     public static IEnumerable<AppEntry> Enumerate()
     {
         var psi = new ProcessStartInfo
@@ -26,20 +28,30 @@ internal static class UwpSource
             UseShellExecute        = false,
             CreateNoWindow         = true,
         };
-        Process proc;
-        try { proc = Process.Start(psi)!; }
-        catch { yield break; }
-
+        // Failures throw instead of returning nothing: AppCatalog keeps the previous
+        // Store list when a source throws, whereas an empty result looked like every
+        // Store app had been uninstalled.
         string output;
-        try
+        using (var proc = Process.Start(psi) ?? throw new InvalidOperationException("powershell.exe did not start"))
         {
-            output = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(10_000);
+            // ReadToEnd used to block with no limit (the WaitForExit timeout after it
+            // never applied): a hung PowerShell held the catalog's scan lock forever,
+            // and every later list refresh waited on it.
+            var read = proc.StandardOutput.ReadToEndAsync();
+            if (!read.Wait(Timeout))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                throw new TimeoutException($"Get-StartApps took longer than {Timeout.TotalSeconds}s");
+            }
+            output = read.Result;
+            proc.WaitForExit(2_000);
+            if (proc.HasExited && proc.ExitCode != 0)
+                throw new InvalidOperationException($"Get-StartApps exited with code {proc.ExitCode}");
         }
-        finally { proc.Dispose(); }
 
         var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2) yield break;
+        if (lines.Length < 2 || !lines[0].Contains("AppID", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Get-StartApps returned no CSV");
 
         // Skip header
         foreach (var raw in lines.Skip(1))

@@ -321,6 +321,15 @@ class PairingClient(
     /** SHA-256 of the certificate this TLS session actually used. */
     @Volatile private var seenFingerprint: String? = null
 
+    /** DONE, ERROR or cancelled: later socket callbacks must not change the phase. */
+    @Volatile private var finished = false
+
+    private fun finish(phase: PairPhase, info: String?) {
+        if (finished) return
+        finished = true
+        onPhase?.invoke(phase, info)
+    }
+
     fun start(onPhase: (PairPhase, String?) -> Unit) {
         this.onPhase = onPhase
         onPhase(PairPhase.CONNECTING, null)
@@ -353,9 +362,17 @@ class PairingClient(
             override fun onMessage(webSocket: WebSocket, text: String) = handle(text)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val mismatch = generateSequence(t) { it.cause }.any { it is CertificateMismatchException }
-                onPhase(PairPhase.ERROR,
+                finish(PairPhase.ERROR,
                     if (mismatch) "El PC de esa dirección no tiene el certificado del QR. Genera un QR nuevo en el panel y vuelve a escanearlo."
                     else t.message)
+            }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(1000, null)
+            }
+            // The agent drops sockets that do not finish pairing in time. Without this
+            // the screen kept asking for the code, and "Confirmar" silently did nothing.
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                finish(PairPhase.ERROR, "El PC cerró la conexión antes de terminar (¿tardaste demasiado?). Vuelve a intentarlo.")
             }
         })
     }
@@ -370,7 +387,7 @@ class PairingClient(
         )))
     }
 
-    fun cancel() { ws?.close(1000, "cancel"); ws = null }
+    fun cancel() { finished = true; ws?.close(1000, "cancel"); ws = null }
 
     var lastResult: AgentCredentials? = null
         private set
@@ -385,8 +402,16 @@ class PairingClient(
             MsgKinds.PairResult -> {
                 val ok = root["success"]?.jsonPrimitive?.boolean == true
                 if (!ok) {
-                    val msg = root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
-                    onPhase?.invoke(PairPhase.ERROR, msg ?: "Pair failed")
+                    val err = root["error"]?.jsonObject
+                    val msg = err?.get("message")?.jsonPrimitive?.content
+                    // A typo in a typed code: let the user fix it on the same socket. The
+                    // agent still locks the phone out after MaxAttempts, which arrives as
+                    // RATE_LIMITED and ends the flow below. A QR code cannot be retyped.
+                    if (err?.get("code")?.jsonPrimitive?.content == "PAIRING_FAILED" && expectedFingerprint == null) {
+                        onPhase?.invoke(PairPhase.WAITING_CODE, "Código incorrecto o caducado. Revisa el que muestra el PC.")
+                        return
+                    }
+                    finish(PairPhase.ERROR, msg ?: "Pair failed")
                     return
                 }
                 val deviceId = root["deviceId"]?.jsonPrimitive?.content ?: return
@@ -395,7 +420,7 @@ class PairingClient(
                 // Someone in the middle presents their own certificate. If what the
                 // agent says it uses is not what we just talked to, do not pin it.
                 if (!fp.equals(seenFingerprint, ignoreCase = true)) {
-                    onPhase?.invoke(PairPhase.ERROR,
+                    finish(PairPhase.ERROR,
                         "El certificado de la conexión no coincide con el que declara el PC. Emparejamiento cancelado.")
                     ws?.close(1000, "fingerprint")
                     return
@@ -409,7 +434,7 @@ class PairingClient(
                     agentName          = agentName,
                     certFingerprintHex = fp,
                 )
-                onPhase?.invoke(PairPhase.DONE, deviceId)
+                finish(PairPhase.DONE, deviceId)
                 ws?.close(1000, "ok")
             }
         }

@@ -230,13 +230,9 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             lifetime.Cancel();
 
             foreach (var lane in conn.Lanes.Values) lane.Writer.TryComplete();
-            foreach (var kv in conn.Subscriptions)
-            {
-                // A stream worker may have finished and disposed its CTS between the
-                // snapshot and this call. Throwing here would skip the session and
-                // connection cleanup below.
-                try { kv.Value.Cancel(); } catch (ObjectDisposedException) { }
-            }
+            // Quietly: a stream that finished may already have disposed its CTS, and a
+            // throw here would skip the session and connection cleanup below.
+            foreach (var kv in conn.Subscriptions) CancelQuietly(kv.Value);
             try { await Task.WhenAll(conn.Workers); } catch { /* already logged per request */ }
 
             if (conn.Session is not null)
@@ -503,10 +499,22 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             return;
         }
 
-        _devices.TouchLastSeen(device.Id);
-        var session = _sessions.Create(device.Id, device.Name);
-        conn.Session = session;
+        // Claim the connection and the session BEFORE re-reading the device. A revoke
+        // that landed after the check above used to find neither (no session yet, no
+        // DeviceId on the socket) and the device authenticated anyway. DeviceAdmin
+        // writes the row first and then scans sessions and sockets, so either that
+        // scan sees what we just set, or the re-read below sees the revocation.
         conn.Tracked.DeviceId = device.Id;
+        var session = _sessions.Create(device.Id, device.Name);
+        if (_devices.Get(device.Id) is not { Revoked: false })
+        {
+            _sessions.End(session.SessionId);
+            conn.Tracked.DeviceId = null;
+            await RejectAuthAsync(conn, "Device not paired or revoked.", ct, DeviceAdmin.RevokedCloseStatus);
+            return;
+        }
+        conn.Session = session;
+        _devices.TouchLastSeen(device.Id);
         _logger.LogInformation("Authenticated {Name} from {Ip} → session {Sess}",
             device.Name, conn.ClientIp, Short(session.SessionId));
 
@@ -636,7 +644,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         var subs = conn.Subscriptions;
 
         // Cancel previous subscription with same id, if any.
-        if (subs.TryRemove(req.Id, out var prev)) prev.Cancel();
+        if (subs.TryRemove(req.Id, out var prev)) CancelQuietly(prev);
 
         if (subs.Count >= MaxSubscriptionsPerConnection)
         {
@@ -692,9 +700,19 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         if (id is null) return;
         if (conn.Subscriptions.TryRemove(id, out var cts))
         {
-            cts.Cancel();
+            CancelQuietly(cts);
             _logger.LogInformation("Unsubscribed {Id}", id);
         }
+    }
+
+    /// <summary>
+    /// A stream that just ended disposes its CTS on its own thread. Cancelling it
+    /// then throws ObjectDisposedException, which escaped the receive loop and
+    /// dropped the whole connection over an unsubscribe.
+    /// </summary>
+    private static void CancelQuietly(CancellationTokenSource cts)
+    {
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
     }
 
     // ══════════════════════════════════════════════════════════════

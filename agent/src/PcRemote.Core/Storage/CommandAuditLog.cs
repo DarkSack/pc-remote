@@ -12,7 +12,7 @@ namespace PcRemote.Core.Storage;
 ///
 /// - Only domain, action, device and result are stored — never params: they
 ///   can carry typed text or clipboard contents.
-/// - High-frequency input (pointer moves, scroll, clicks, presses) is skipped.
+/// - High-frequency commands (pointer moves, scroll, clicks, icon batches, volume drags) are skipped.
 ///   A touchpad sends ~60 moves a second; logging those would bury the useful
 ///   rows and hammer the disk.
 /// - Recording never blocks a command: rows go to a bounded queue that a
@@ -26,6 +26,9 @@ public sealed class CommandAuditLog : BackgroundService
         "input.mouseMove", "input.mouseScroll", "input.mousePos",
         "input.mouseClick", "input.mouseDown", "input.mouseUp",
         "ping.ping", "systeminfo.stats",
+        // The phone asks for icons in batches while the app list scrolls, and sends
+        // volume several times a second while the slider is dragged.
+        "appicons.get", "media.volumeSet",
     };
 
     /// <summary>Rows older than this are deleted at startup.</summary>

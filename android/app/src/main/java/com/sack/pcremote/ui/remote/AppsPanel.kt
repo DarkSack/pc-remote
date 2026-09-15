@@ -73,14 +73,23 @@ private class IconLoader(private val client: AgentClient) {
     private val requested = HashSet<String>()
     private val queue = Channel<String>(Channel.UNLIMITED)
 
+    /**
+     * Bumped after a reconnect. Rows key their request on it: a row already on
+     * screen asks only once, so icons that failed while the connection was down
+     * never loaded until the row was scrolled away and back.
+     */
+    var generation by mutableIntStateOf(0)
+        private set
+
     fun request(id: String) {
         if (id in icons || !requested.add(id)) return
         queue.trySend(id)
     }
 
-    /** Forget failed/unknown ids after a reconnect so they are retried. */
+    /** Forget ids that never got an answer, and make visible rows ask again. */
     fun resetPending() {
         requested.retainAll(icons.keys)
+        generation++
     }
 
     suspend fun run() {
@@ -97,8 +106,11 @@ private class IconLoader(private val client: AgentClient) {
                 batch.forEach { requested.remove(it) } // not connected: retry when the row shows again
                 continue
             }
-            val map = runCatching { json.decodeFromJsonElement(AppIcons.serializer(), res.data).icons }.getOrDefault(emptyMap())
+            val map = runCatching { json.decodeFromJsonElement(AppIcons.serializer(), res.data).icons }.getOrNull()
+            if (map == null) { batch.forEach { requested.remove(it) }; continue }
             for (id in batch) {
+                // Missing = the PC was still drawing it (null would mean "no icon"): ask again later.
+                if (id !in map) { requested.remove(id); continue }
                 icons[id] = map[id]?.let { b64 ->
                     runCatching {
                         val bytes = Base64.decode(b64, Base64.DEFAULT)
@@ -126,20 +138,26 @@ fun AppsPanel(client: AgentClient, state: ConnectionState, pcFingerprint: String
 
     LaunchedEffect(loader) { loader.run() }
 
+    fun apply(data: kotlinx.serialization.json.JsonElement) {
+        val list = runCatching { json.decodeFromJsonElement(AppList.serializer(), data) }.getOrNull() ?: return
+        // Ids are the LazyColumn keys; a duplicate would crash the list. The agent
+        // dedupes them, this keeps an older agent from taking the app down.
+        apps = list.applications.distinctBy { it.id }
+        error = null
+        // An empty list is far more likely a PC-side failure than "everything uninstalled".
+        if (list.applications.isNotEmpty()) {
+            prefs.prune(list.applications.mapTo(HashSet()) { it.id })
+            favorites = prefs.favorites()
+            recents = prefs.recents()
+        }
+    }
+
     // Live list. Re-subscribes on every reconnect (streams die with the socket).
     LaunchedEffect(state) {
         if (state != ConnectionState.CONNECTED) return@LaunchedEffect
         loader.resetPending()
         error = null
-        val sub = client.subscribe("applications", "watch") { data ->
-            val list = runCatching { json.decodeFromJsonElement(AppList.serializer(), data) }.getOrNull() ?: return@subscribe
-            apps = list.applications
-            error = null
-            val ids = list.applications.mapTo(HashSet()) { it.id }
-            prefs.prune(ids)
-            favorites = prefs.favorites()
-            recents = prefs.recents()
-        }
+        val sub = client.subscribe("applications", "watch") { data -> apply(data) }
         try {
             // The first snapshot can take a few seconds (the PC lists Store apps via PowerShell).
             if (apps == null && withTimeoutOrNull(FIRST_LOAD_TIMEOUT_MS) { while (apps == null) delay(200) } == null) {
@@ -190,9 +208,13 @@ fun AppsPanel(client: AgentClient, state: ConnectionState, pcFingerprint: String
                     // Forces a rescan on the PC; the new list arrives through the stream.
                     scope.launch {
                         refreshing = true
-                        runCatching {
+                        val res = runCatching {
                             client.request("applications", "list", buildJsonObject { put("refresh", true) }, timeoutMs = FIRST_LOAD_TIMEOUT_MS)
-                        }
+                        }.getOrNull()
+                        // Use the answer too: if the stream never started (the first load
+                        // timed out), this button was the only way out and did nothing.
+                        if (res?.success == true && res.data != null) apply(res.data)
+                        else if (apps == null) error = res?.error?.message ?: "No se pudo leer la lista de apps."
                         refreshing = false
                     }
                 },
@@ -255,7 +277,7 @@ private fun Header(text: String) {
 @Composable
 private fun AppIcon(app: AppEntry, loader: IconLoader, size: Dp) {
     // Asking only when the row is composed = only for what is on screen (LazyColumn).
-    LaunchedEffect(app.id) { loader.request(app.id) }
+    LaunchedEffect(app.id, loader.generation) { loader.request(app.id) }
     val icon = loader.icons[app.id]
     Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(BgAltDark), contentAlignment = Alignment.Center) {
         if (icon != null) Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize().padding(2.dp))

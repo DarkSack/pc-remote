@@ -35,6 +35,7 @@ import com.sack.pcremote.net.NowPlaying
 import com.sack.pcremote.ui.theme.*
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -70,11 +71,20 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
         try { awaitCancellation() } finally { sub.cancel() }
     }
 
-    // Send volume while dragging, but at most every 120 ms.
-    LaunchedEffect(dragVolume) {
-        val v = dragVolume ?: return@LaunchedEffect
-        delay(120)
-        client.send("media", "volumeSet", buildJsonObject { put("volume", v.toInt()) })
+    // Send volume while dragging, at most every 120 ms. This used to be keyed on
+    // dragVolume, which restarts the effect on every change: a debounce, not a
+    // throttle, so the PC's volume only moved once the finger stopped.
+    LaunchedEffect(client) {
+        var lastSent: Int? = null
+        while (isActive) {
+            delay(120)
+            val v = dragVolume?.toInt()
+            if (v == null) { lastSent = null; continue }
+            if (v != lastSent) {
+                client.send("media", "volumeSet", buildJsonObject { put("volume", v) })
+                lastSent = v
+            }
+        }
     }
 
     fun action(name: String) = client.send("media", name)
