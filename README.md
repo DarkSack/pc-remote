@@ -45,17 +45,18 @@ pc-remote/
 │   ├── PcRemote.Agent.slnx
 │   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
 │   ├── global.json
-│   └── src/
-│       ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
-│       ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite
-│       ├── PcRemote.Modules.System/      # apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión (+ ping)
-│       ├── PcRemote.Modules.SystemInfo/  # info estática + stream de CPU/RAM
-│       ├── PcRemote.Modules.Input/       # ratón y teclado (SendInput)
-│       ├── PcRemote.Modules.Clipboard/   # leer, escribir, vigilar
-│       ├── PcRemote.Modules.Applications/# menú Inicio + registro + UWP; lanzar
-│       ├── PcRemote.Modules.Processes/   # listar y matar
-│       ├── PcRemote.Modules.Windows/     # listar, enfocar, minimizar, maximizar, cerrar
-│       └── PcRemote.Modules.Media/       # SMTC + volumen
+│   ├── src/
+│   │   ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
+│   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite
+│   │   ├── PcRemote.Modules.System/      # apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión (+ ping)
+│   │   ├── PcRemote.Modules.SystemInfo/  # info estática + stream de CPU/RAM
+│   │   ├── PcRemote.Modules.Input/       # ratón y teclado (SendInput)
+│   │   ├── PcRemote.Modules.Clipboard/   # leer, escribir, vigilar
+│   │   ├── PcRemote.Modules.Applications/# "Todas las apps" del menú Inicio (Store y Steam incluidos) + registro; iconos; lanzar
+│   │   ├── PcRemote.Modules.Processes/   # listar y matar
+│   │   ├── PcRemote.Modules.Windows/     # listar, enfocar, minimizar, maximizar, cerrar
+│   │   └── PcRemote.Modules.Media/       # SMTC + volumen
+│   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
 ├── android/                              # Kotlin + Compose
 └── mobile/                               # DEPRECADO (React Native)
 ```
@@ -85,6 +86,13 @@ Puertos por defecto (en `appsettings.json`):
 | 47810 | Panel web | solo `localhost` |
 
 Windows pedirá permiso de firewall para el 47820 la primera vez.
+
+Tests del agente (no necesitan el agente arrancado; uno lee la lista real de apps de este Windows):
+
+```bash
+cd agent
+dotnet test PcRemote.Agent.slnx
+```
 
 ### Android
 

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Target framework, nullable and friends come from ../../Directory.Build.props. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- The modules use System.Drawing / WinForms types. -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PcRemote.Core\PcRemote.Core.csproj" />
+    <ProjectReference Include="..\..\src\PcRemote.Modules.Applications\PcRemote.Modules.Applications.csproj" />
+    <ProjectReference Include="..\..\src\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
+    <ProjectReference Include="..\..\src\PcRemote.Modules.Clipboard\PcRemote.Modules.Clipboard.csproj" />
+  </ItemGroup>
+</Project>

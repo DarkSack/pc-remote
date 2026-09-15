@@ -134,7 +134,7 @@ public sealed class ClipboardModule : ICommandModule, IStreamModule
     /// emoji; System.Text.Json refuses to write invalid UTF-16, so the send threw
     /// and the watch stream died silently the first time that happened.
     /// </summary>
-    private static string SafeTruncate(string s, int max)
+    internal static string SafeTruncate(string s, int max)
     {
         if (s.Length <= max) return s;
         var cut = char.IsHighSurrogate(s[max - 1]) ? max - 1 : max;

@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 using System.Text.Json;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
+using PcRemote.Modules.Applications.Sources;
 
 namespace PcRemote.Modules.Applications;
 
@@ -78,15 +79,17 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
         if (entry == null)
             return CommandResponse.Fail(req.Id, ErrorCodes.NotFound, $"No application with id '{id}'");
 
-        var psi = entry.Source switch
+        var psi = entry switch
         {
-            // Unquoted on purpose and verified: explorer takes its whole command line,
-            // so ids with spaces ("{…}\DB Browser for SQLite\…exe") already open fine.
-            "uwp" => new ProcessStartInfo("explorer.exe", entry.Launch) { UseShellExecute = false, CreateNoWindow = true },
+            // Everything from shell:AppsFolder (shortcuts, Store apps, Steam games) opens
+            // the way the Start menu opens it. Unquoted on purpose and verified: explorer
+            // takes its whole command line, so ids with spaces open fine.
+            { Launch: var l } when l.StartsWith(AppsFolderSource.LaunchPrefix, StringComparison.OrdinalIgnoreCase)
+                => new ProcessStartInfo("explorer.exe", l) { UseShellExecute = false, CreateNoWindow = true },
             // A .exe from the registry inherited the agent's working directory. Apps
             // that read config or data files relative to it failed to start or
             // started without their settings; a shortcut would have set it.
-            "registry" => new ProcessStartInfo(entry.Launch)
+            { Source: "registry" } => new ProcessStartInfo(entry.Launch)
             {
                 UseShellExecute = true,
                 WorkingDirectory = Path.GetDirectoryName(entry.Launch) ?? "",

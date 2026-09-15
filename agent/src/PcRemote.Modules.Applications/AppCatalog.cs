@@ -13,7 +13,7 @@ namespace PcRemote.Modules.Applications;
 //     desinstalar casi cualquier app crea o borra un acceso directo ahí. Los
 //     eventos llegan en ráfagas (un instalador toca decenas de ficheros), así
 //     que se espera a 3 s de calma y se recalcula una vez.
-//   - Recalculado periódico cada 10 min para lo que no deja acceso directo:
+//   - Recalculado periódico cada 2 min para lo que no deja acceso directo:
 //     entradas de registro y apps de la Store.
 //
 // Cada recálculo que cambia algo sube `Version`; los streams comparan esa
@@ -23,7 +23,9 @@ namespace PcRemote.Modules.Applications;
 internal static class AppCatalog
 {
     private static readonly TimeSpan Debounce = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan Periodic = TimeSpan.FromMinutes(10);
+    // Store installs do not touch the Start Menu folders, so only this catches them.
+    // Cheap since the scan reads shell:AppsFolder directly instead of running PowerShell.
+    private static readonly TimeSpan Periodic = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Uninstallers are not apps. Checked on the final name, whatever the source:
@@ -46,8 +48,8 @@ internal static class AppCatalog
     private static System.Threading.Timer? _debounceTimer;
     private static System.Threading.Timer? _periodicTimer;
 
-    // Serialises rescans. Kept apart from Gate: a rescan runs PowerShell (~2 s),
-    // and holding Gate that long would make every launch wait behind it.
+    // Serialises rescans. Kept apart from Gate: a rescan walks the shell and the
+    // registry, and holding Gate that long would make every launch wait behind it.
     private static readonly SemaphoreSlim ScanGate = new(1, 1);
 
     /// <summary>Set when a rescan is wanted; a scan already running picks it up when it finishes.</summary>
@@ -96,11 +98,23 @@ internal static class AppCatalog
     private static List<AppEntry> Scan()
     {
         var all = new List<AppEntry>();
-        all.AddRange(FromSource("startmenu", StartMenuSource.Enumerate));
+        // shell:AppsFolder is "All apps" from the Start menu: shortcuts, Store apps and
+        // URL shortcuts such as Steam games. Only if it has never worked do we fall
+        // back to reading the Start Menu folders ourselves.
+        var apps = FromSource("appsfolder", AppsFolderSource.Enumerate);
+        all.AddRange(apps.Count > 0 ? apps : FromSource("startmenu", StartMenuSource.Enumerate));
+        // Installed programs that left no shortcut at all.
         all.AddRange(FromSource("registry", RegistrySource.Enumerate));
-        all.AddRange(FromSource("uwp", UwpSource.Enumerate));
 
-        // Preference: startmenu > registry > uwp (the order they are added in).
+        return Merge(all);
+    }
+
+    /// <summary>
+    /// Drops uninstallers, empty names and duplicates. The first entry wins, so the
+    /// order of <paramref name="all"/> is the preference (Start menu before registry).
+    /// </summary>
+    internal static List<AppEntry> Merge(IEnumerable<AppEntry> all)
+    {
         // Ids are deduplicated too, not only names: the phone keys its list by id,
         // and two rows with the same key crash a Compose LazyColumn.
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -117,8 +131,8 @@ internal static class AppCatalog
     }
 
     /// <summary>
-    /// A source that fails keeps its previous result. Before, a PowerShell hiccup
-    /// during the periodic rescan dropped every Store app from the catalog, and the
+    /// A source that fails keeps its previous result. Before, a failed read of the
+    /// Store apps during the periodic rescan dropped all of them from the catalog, and the
     /// phone, seeing them "uninstalled", deleted them from favorites and recents.
     /// </summary>
     private static List<AppEntry> FromSource(string name, Func<IEnumerable<AppEntry>> source)
@@ -194,8 +208,22 @@ internal static class AppCatalog
         }
     }
 
-    private static void ScheduleRefresh() =>
+    /// <summary>
+    /// Windows updates shell:AppsFolder a few seconds after the shortcut changes
+    /// (about 5 s measured here, for adding and for deleting), so the scan 3 s after
+    /// the last event can still see the old list. Two follow-up scans catch it; a
+    /// scan that finds nothing new changes nothing and sends nothing.
+    /// </summary>
+    private static readonly TimeSpan[] FollowUps = { TimeSpan.FromSeconds(12), TimeSpan.FromSeconds(30) };
+    private static readonly System.Threading.Timer[] FollowUpTimers =
+        FollowUps.Select(_ => new System.Threading.Timer(_ => RefreshInBackground(), null, Timeout.Infinite, Timeout.Infinite)).ToArray();
+
+    private static void ScheduleRefresh()
+    {
         _debounceTimer?.Change(Debounce, Timeout.InfiniteTimeSpan);
+        for (int i = 0; i < FollowUps.Length; i++)
+            FollowUpTimers[i].Change(FollowUps[i], Timeout.InfiniteTimeSpan);
+    }
 
     private static void RefreshInBackground()
     {
@@ -204,7 +232,7 @@ internal static class AppCatalog
         {
             // Never stack two rescans. The one running re-checks _dirty before it ends,
             // so a change that arrives mid-scan (after it already read the Start Menu)
-            // is not lost until the periodic rescan 10 minutes later.
+            // is not lost until the next periodic rescan.
             if (!ScanGate.Wait(0)) return;
             try
             {

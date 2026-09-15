@@ -179,14 +179,15 @@ PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 
 | Action | Kind | Params | Data |
 |---|---|---|---|
-| `list` | request | `{ refresh?: bool, filter? }` — `refresh` fuerza un reescaneo ya | `{ version, count, applications: [{ id, name, source }] }` con `source` = `startmenu` \| `registry` \| `uwp`, ordenadas por nombre |
+| `list` | request | `{ refresh?: bool, filter? }` — `refresh` fuerza un reescaneo ya (~1 s) | `{ version, count, applications: [{ id, name, source }] }` con `source` = `startmenu` (accesos del menú Inicio, incluidos accesos a URL como los juegos de Steam) \| `uwp` (Store) \| `registry` (programas instalados sin acceso directo), ordenadas por nombre |
 | `watch` | subscribe | — | La misma forma que `list`, al suscribirse y **cada vez que cambia el catálogo** (se instala o desinstala algo) |
 | `launch` | request | `{ id }` (el de `list`/`watch`) | `{ launched, id, source }`. Solo acepta ids del catálogo |
 
-El catálogo se mantiene solo: vigila las carpetas del menú Inicio (con 3 s de
-espera para agrupar las ráfagas de un instalador) y reescanea todo cada 10 min
-para lo que no deja acceso directo. `version` sube con cada cambio. Si una fuente
-falla al reescanear (p. ej. PowerShell para la Store), se conserva su lista
+La lista sale de `shell:AppsFolder` (la misma que "Todas las apps" del menú
+Inicio) más el registro. Se mantiene sola: vigila las carpetas del menú Inicio
+(reescanea 3 s después del último cambio y otra vez a los 12 y 30 s, porque
+Windows tarda unos 5 s en reflejarlo) y reescanea todo cada 2 min para las apps
+de la Store. `version` sube con cada cambio. Si una fuente falla al reescanear, se conserva su lista
 anterior en vez de dar sus apps por desinstaladas. Los accesos a desinstaladores
 no se listan. Los ids son únicos.
 
@@ -209,8 +210,8 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 
 | Action | Params | Data |
 |---|---|---|
-| `list` | — | `{ windows: [{ hwnd, title, pid, process, minimized, maximized, x, y, width, height }] }` (solo visibles y con título) |
-| `focus` | `{ hwnd }` — restaura si está minimizada | `{ ok }` |
+| `list` | — | `{ windows: [{ hwnd, title, pid, process, foreground, minimized, maximized, x, y, width, height }] }` (solo visibles y con título; `foreground` = la que tiene el foco) |
+| `focus` | `{ hwnd }` — restaura si está minimizada | `{ ok }` — `ok` dice si la ventana quedó realmente delante. Funciona aunque el agente esté en segundo plano (Windows limita eso; el agente lo sortea) |
 | `minimize` / `maximize` / `restore` | `{ hwnd }` | `{ ok }` |
 | `close` | `{ hwnd }` — envía `WM_CLOSE` sin esperar; la app puede preguntar antes de cerrar | `{ ok }` |
 
@@ -220,7 +221,7 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 |---|---|---|
 | `play` / `pause` / `playPause` / `next` / `previous` | — | `{ ok, source }`; `NOT_FOUND` si no hay sesión multimedia |
 | `nowPlaying` | — como **request** | `{ active, source, title, artist, album, status }` |
-| `nowPlaying` | — como **subscribe** | `{ active, source, title, artist, album, status, volume, mute, trackChanged, artworkBase64 }` al suscribirse y cada vez que algo cambia (se comprueba cada segundo). La carátula solo viaja cuando cambia la pista (`trackChanged: true`); si no, `artworkBase64` es null y el cliente conserva la que tenía. Máx. 512 KB |
+| `nowPlaying` | — como **subscribe** | `{ active, source, title, artist, album, status, volume, mute, trackChanged, artworkBase64 }` al suscribirse y cada vez que algo cambia (se comprueba cada segundo). La carátula solo viaja con `trackChanged: true`: el cliente reemplaza su imagen por `artworkBase64` (null = sin carátula). Si el reproductor la publica tarde, llega hasta 5 s después en otro mensaje con `trackChanged: true`. Con `trackChanged: false` el cliente conserva la que tenía. Máx. 512 KB |
 | `volumeGet` | — | `{ volume: 0–100, mute }` |
 | `volumeSet` | `{ volume: 0–100 }` | `{ volume }` |
 | `volumeMute` | `{ mute?: bool }` — sin parámetro alterna | `{ mute }` |

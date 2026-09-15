@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using PcRemote.Core.Protocol;
@@ -58,6 +59,7 @@ public sealed class WindowsModule : ICommandModule
     private static CommandResponse List(CommandRequest req)
     {
         var items = new List<object>();
+        var foreground = WindowNative.GetForegroundWindow();
         WindowNative.EnumWindows((h, _) =>
         {
             if (!WindowNative.IsWindowVisible(h)) return true;
@@ -80,6 +82,7 @@ public sealed class WindowsModule : ICommandModule
                 title,
                 pid,
                 process   = procName,
+                foreground = h == foreground,
                 minimized = WindowNative.IsIconic(h),
                 maximized = WindowNative.IsZoomed(h),
                 x = r.Left, y = r.Top,
@@ -91,12 +94,44 @@ public sealed class WindowsModule : ICommandModule
         return CommandResponse.Ok(req.Id, new { windows = items });
     }
 
-    /// <summary>A minimized window stays minimized after SetForegroundWindow; restore it first.</summary>
+    /// <summary>
+    /// Brings a window to the front from a background process.
+    ///
+    /// Windows only lets the process that received the last input change the
+    /// foreground window. The agent never has focus, so plain SetForegroundWindow
+    /// worked a couple of times and then only flashed the taskbar button (reproduced
+    /// with focus.mjs: the third focus in a row returned false).
+    ///   1. An empty mouse input from this process first counts as "last input"
+    ///      (the trick PowerToys uses). It moves nothing and clicks nothing.
+    ///   2. If Windows still refuses, attach to the foreground window's input queue
+    ///      for the call, which the lock allows, and detach right after.
+    /// A minimized window stays minimized after SetForegroundWindow; restore it first.
+    /// Returns whether the window really ended up in front.
+    /// </summary>
     private static bool Focus(IntPtr hwnd)
     {
         if (WindowNative.IsIconic(hwnd))
             WindowNative.ShowWindow(hwnd, WindowNative.SW_RESTORE);
-        return WindowNative.SetForegroundWindow(hwnd);
+        if (WindowNative.GetForegroundWindow() == hwnd) return true;
+
+        var empty = new[] { new WindowNative.INPUT { type = WindowNative.INPUT_MOUSE } };
+        WindowNative.SendInput(1, empty, Marshal.SizeOf<WindowNative.INPUT>());
+        if (WindowNative.SetForegroundWindow(hwnd) && WindowNative.GetForegroundWindow() == hwnd) return true;
+
+        var foregroundThread = WindowNative.GetWindowThreadProcessId(WindowNative.GetForegroundWindow(), out _);
+        var ourThread = WindowNative.GetCurrentThreadId();
+        var attached = foregroundThread != 0 && foregroundThread != ourThread &&
+                       WindowNative.AttachThreadInput(ourThread, foregroundThread, true);
+        try
+        {
+            WindowNative.BringWindowToTop(hwnd);
+            WindowNative.SetForegroundWindow(hwnd);
+        }
+        finally
+        {
+            if (attached) WindowNative.AttachThreadInput(ourThread, foregroundThread, false);
+        }
+        return WindowNative.GetForegroundWindow() == hwnd;
     }
 
     private static CommandResponse Op(CommandRequest req, Func<IntPtr, bool> fn)

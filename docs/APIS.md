@@ -15,15 +15,16 @@ funciones que aún no existen.
 | **Clipboard** — Watch | Sondeo de `GetClipboardSequenceNumber` cada 500 ms; solo lee el texto si cambió | `user32.dll` |
 | **Media** — Play/Pause/Next/Previous + metadata | `GlobalSystemMediaTransportControlsSessionManager` (SMTC) | WinRT |
 | **Media** — Volume | `IAudioEndpointVolume` vía `NAudio.CoreAudioApi` (se libera en cada llamada) | NAudio 3 |
-| **Windows** — Enum + operations | `EnumWindows`, `GetWindowText`, `GetWindowThreadProcessId`, `SetForegroundWindow`, `ShowWindow`, `PostMessage(WM_CLOSE)` | `user32.dll` |
+| **Windows** — Enum + operations | `EnumWindows`, `GetWindowText`, `GetWindowThreadProcessId`, `SetForegroundWindow` (precedido de un `SendInput` vacío y, si Windows se niega, `AttachThreadInput`), `ShowWindow`, `PostMessage(WM_CLOSE)` | `user32.dll` |
 | **Processes** — List | `Process.GetProcesses()` (ordenado por working set) | .NET |
 | ⏳ **Processes** — CPU% | `\Process(*)\% Processor Time` delta + `Environment.ProcessorCount` | Perf Counter |
 | **Processes** — Kill | `Process.Kill(entireProcessTree: true)` | .NET |
 | **Applications** — Enum Win32 | Registro `HKLM/HKCU\...\Uninstall`, solo si `DisplayIcon` apunta a un `.exe` que existe | .NET registry |
-| **Applications** — Enum Start Menu | `.lnk` en las carpetas `Programs` del menú Inicio (usuario y común) | `System.IO` |
-| **Applications** — Enum UWP | `Get-StartApps` en PowerShell, salida forzada a UTF-8 | PowerShell |
-| **Applications** — Launch Win32 | `Process.Start(ProcessStartInfo{ UseShellExecute=true })` | .NET |
-| **Applications** — Launch UWP | `explorer.exe shell:AppsFolder\<AppID>` | Shell |
+| **Applications** — Enum menú Inicio + Store + accesos URL | `SHGetKnownFolderItem(FOLDERID_AppsFolder)` → `IEnumShellItems`, nombre y AppID con `IShellItem.GetDisplayName` (en un hilo STA). Si nunca ha funcionado, se leen los `.lnk` de las carpetas `Programs` | `shell32.dll` (COM) |
+| **Applications** — Vigilancia | `FileSystemWatcher` sobre las carpetas `Programs` + reescaneo cada 2 min | .NET |
+| **Applications** — Launch registro | `Process.Start(ProcessStartInfo{ UseShellExecute=true, WorkingDirectory=carpeta del .exe })` | .NET |
+| **Applications** — Launch resto | `explorer.exe shell:AppsFolder\<AppID>` | Shell |
+| **Applications** — Iconos | `SHCreateItemFromParsingName` + `IShellItemImageFactory.GetImage` → PNG | `shell32.dll` (COM) |
 | **SystemInfo** — CPU% | `\Processor(_Total)\% Processor Time` | Perf Counter |
 | **SystemInfo** — RAM | `GlobalMemoryStatusEx` | `kernel32.dll` |
 | ⏳ **SystemInfo** — GPU% | `\GPU Engine(*)\Utilization Percentage` (excluir engine 3D idle) | Perf Counter |

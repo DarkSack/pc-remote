@@ -26,6 +26,9 @@ public sealed class MediaModule : ICommandModule, IStreamModule
     /// <summary>Artwork larger than this is not sent (JPEG/PNG thumbnails are usually 10–100 KB).</summary>
     private const int MaxArtworkBytes = 512 * 1024;
 
+    /// <summary>Ticks (one a second) spent waiting for a new track's artwork to appear.</summary>
+    private const int ArtworkTries = 5;
+
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("play",       "Reanudar reproducción"),
@@ -114,6 +117,10 @@ public sealed class MediaModule : ICommandModule, IStreamModule
 
         string? lastTrack = null;
         string? lastState = null;
+        // Players publish the title first and the thumbnail a moment later (Spotify,
+        // browsers). Reading the artwork only on the tick the track changed left
+        // those tracks without a cover; it is now retried for a few ticks.
+        var artworkTriesLeft = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -121,13 +128,21 @@ public sealed class MediaModule : ICommandModule, IStreamModule
             var track = snap.Active ? $"{snap.Source}|{snap.Title}|{snap.Artist}|{snap.Album}" : "";
             var state = $"{track}|{snap.Status}|{snap.Volume}|{snap.Mute}";
 
-            if (state != lastState)
-            {
-                var trackChanged = track != lastTrack;
-                string? artwork = null;
-                if (trackChanged && snap.Session is not null)
-                    artwork = await TryReadArtworkAsync(snap.Session);
+            var trackChanged = track != lastTrack;
+            if (trackChanged) artworkTriesLeft = snap.Active ? ArtworkTries : 0;
 
+            string? artwork = null;
+            if (artworkTriesLeft > 0 && snap.Session is not null)
+            {
+                artwork = await TryReadArtworkAsync(snap.Session);
+                artworkTriesLeft = artwork is null ? artworkTriesLeft - 1 : 0;
+            }
+
+            // A late cover goes out on its own, with trackChanged: true so the client
+            // replaces its image (the flag means "take artworkBase64 as the new image").
+            if (state != lastState || artwork is not null)
+            {
+                trackChanged = trackChanged || artwork is not null;
                 lastTrack = track;
                 lastState = state;
                 yield return new

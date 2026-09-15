@@ -24,7 +24,9 @@ import com.sack.pcremote.ui.theme.*
 fun PairScreen(
     host: String, port: Int, agentName: String,
     store: CredentialsStore,
-    onDone: () -> Unit,
+    /** Paired and saved: open that PC straight away (receives the new deviceId). */
+    onPaired: (String) -> Unit,
+    onBack: () -> Unit,
     // From the panel's QR: the code is already known and the certificate is pinned from the start.
     qrCode: String? = null,
     qrFingerprint: String? = null,
@@ -47,7 +49,8 @@ fun PairScreen(
     }
     DisposableEffect(Unit) { onDispose { client.cancel() } }
     LaunchedEffect(phase) {
-        if (phase == PairPhase.DONE) { kotlinx.coroutines.delay(700); onDone() }
+        val id = client.lastResult?.deviceId
+        if (phase == PairPhase.DONE && id != null) { kotlinx.coroutines.delay(700); onPaired(id) }
     }
 
     Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -102,13 +105,13 @@ fun PairScreen(
             PairPhase.CONFIRMING -> Centered { CircularProgressIndicator(color = Accent); Spacer(Modifier.height(12.dp)); Text("Verificando código…", color = TextDark) }
             PairPhase.DONE -> Centered {
                 Text("✓ Emparejado", color = Success, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Volviendo…", color = DimDark, fontSize = 13.sp)
+                Text("Abriendo el PC…", color = DimDark, fontSize = 13.sp)
             }
             PairPhase.ERROR -> Centered {
                 Text("Error de emparejamiento", color = Danger, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(info ?: "Sin detalles", color = DimDark, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = onDone, colors = ButtonDefaults.buttonColors(containerColor = CardDark)) {
+                Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = CardDark)) {
                     Text("Volver", color = TextDark)
                 }
             }

@@ -29,7 +29,13 @@ import com.sack.pcremote.data.CredentialsStore
 import com.sack.pcremote.net.*
 import com.sack.pcremote.ui.remote.*
 import com.sack.pcremote.ui.theme.*
+import android.net.ConnectivityManager
+import android.net.Network
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleStartEffect
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -49,6 +55,9 @@ private enum class Section(val title: String, val icon: ImageVector?) {
     Apps("Apps", Icons.Filled.Apps),
     Clipboard("Portapapeles", Icons.Filled.ContentPaste),
 }
+
+/** How long the PC connection survives with the app in the background. */
+private const val BACKGROUND_GRACE_MS = 30_000L
 
 private data class PowerAction(val action: String, val label: String, val color: Color, val confirm: String?)
 
@@ -76,9 +85,33 @@ fun DashboardScreen(deviceId: String, store: CredentialsStore, onBack: () -> Uni
     var stats by remember { mutableStateOf<SystemStats?>(null) }
     val json = remember { Json { ignoreUnknownKeys = true } }
 
-    DisposableEffect(Unit) {
-        client.connect()
-        onDispose { client.disconnect() }
+    // The connection follows the app. In the background it is kept for a short grace
+    // period (hopping to another app and back should not reconnect), then dropped:
+    // before, it stayed open — and kept retrying with backoff — for as long as Android
+    // let the process live, costing battery and holding a session on the PC.
+    val ctx = LocalContext.current
+    val effectScope = rememberCoroutineScope()
+    val background = remember { object { var drop: Job? = null } }
+    LifecycleStartEffect(client) {
+        background.drop?.cancel()
+        background.drop = null
+        // FAILED waits for the user ("Reintentar"): a revoked device must not retry on every return.
+        if (client.state.value == ConnectionState.DISCONNECTED) client.connect()
+        onStopOrDispose {
+            background.drop = effectScope.launch { delay(BACKGROUND_GRACE_MS); client.disconnect() }
+        }
+    }
+    DisposableEffect(client) {
+        // Network back (Wi-Fi reconnected, switched networks): skip the rest of the backoff.
+        val cm = ctx.getSystemService(ConnectivityManager::class.java)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = client.reconnectNow()
+        }
+        runCatching { cm?.registerDefaultNetworkCallback(callback) }
+        onDispose {
+            runCatching { cm?.unregisterNetworkCallback(callback) }
+            client.disconnect()
+        }
     }
 
     // Stats only matter on the home section; info is fetched once per connection.

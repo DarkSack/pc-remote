@@ -11,4 +11,7 @@
     <Project Path="src/PcRemote.Modules.SystemInfo/PcRemote.Modules.SystemInfo.csproj" />
     <Project Path="src/PcRemote.Modules.Windows/PcRemote.Modules.Windows.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PcRemote.Tests/PcRemote.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -6,4 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PcRemote.Tests" />
+  </ItemGroup>
 </Project>

@@ -90,6 +90,20 @@ class AgentClient(private val creds: AgentCredentials) {
         old?.close(1000, "bye")
     }
 
+    /**
+     * A network just came up (Wi-Fi back, switched networks). If we are waiting out
+     * a backoff delay — up to 30 s — try right away instead. Does nothing in any
+     * other state, so it is safe to call on every network callback.
+     */
+    @Synchronized
+    fun reconnectNow() {
+        if (_state.value != ConnectionState.RECONNECTING || reconnectJob?.isActive != true) return
+        reconnectJob?.cancel()
+        reconnectJob = null
+        backoffIndex = 0
+        openSocket(initial = false)
+    }
+
     /** States from which no automatic reconnect should happen. */
     private fun isTerminal() =
         _state.value == ConnectionState.DISCONNECTED || _state.value == ConnectionState.FAILED
@@ -205,9 +219,13 @@ class AgentClient(private val creds: AgentCredentials) {
         _state.value = ConnectionState.RECONNECTING
         reconnectJob = scope.launch {
             delay(delayMs)
-            if (isTerminal()) return@launch
-            backoffIndex = minOf(backoffIndex + 1, backoff.lastIndex)
-            openSocket(initial = false)
+            // Same lock as reconnectNow: if it cancelled this job while we were waking
+            // up, isActive is false here and only its socket gets opened, not two.
+            synchronized(this@AgentClient) {
+                if (!isActive || isTerminal()) return@launch
+                backoffIndex = minOf(backoffIndex + 1, backoff.lastIndex)
+                openSocket(initial = false)
+            }
         }
     }
 

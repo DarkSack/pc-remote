@@ -65,10 +65,17 @@ public sealed record CommandResponse(
             ? Fail(id, ErrorCodes.InvalidParams, $"Missing or invalid params: {ex.Message}")
             : Fail(id, ErrorCodes.InternalError, ex.Message);
 
+    /// <remarks>
+    /// Decided by where the exception was thrown, not by <c>Exception.Source</c>: on
+    /// .NET 10 a wrong type or an out-of-range number reports its Source as
+    /// "System.Text.Json.Rethrowable", so comparing Source to "System.Text.Json" sent
+    /// every mistyped param back as INTERNAL_ERROR (caught by the unit tests).
+    /// </remarks>
     private static bool IsParamError(Exception ex) =>
         ex is KeyNotFoundException ||
         (ex is InvalidOperationException or FormatException &&
-         ex.Source == typeof(System.Text.Json.JsonElement).Assembly.GetName().Name);
+         new System.Diagnostics.StackTrace(ex).GetFrames()
+             .Any(f => f.GetMethod()?.DeclaringType == typeof(System.Text.Json.JsonElement)));
 }
 
 public sealed record ErrorInfo(

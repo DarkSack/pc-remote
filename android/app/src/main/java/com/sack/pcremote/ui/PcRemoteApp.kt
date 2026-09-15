@@ -56,7 +56,11 @@ fun PcRemoteApp(nav: NavHostController, store: CredentialsStore, discovery: Disc
             val name = args?.getString("name") ?: ""
             PairScreen(
                 host = host, port = port, agentName = name, store = store,
-                onDone = { nav.popBackStack("discovery", inclusive = false) },
+                // Straight into the new PC; Back from there returns to the list, not to pairing.
+                onPaired = { deviceId ->
+                    nav.navigate("dashboard/$deviceId") { popUpTo("discovery") { inclusive = false } }
+                },
+                onBack = { nav.popBackStack("discovery", inclusive = false) },
                 qrCode = args?.getString("code"),
                 qrFingerprint = args?.getString("fp"),
             )
