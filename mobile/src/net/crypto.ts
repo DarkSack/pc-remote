@@ -27,6 +27,22 @@ export async function signBase64(privateKey: Uint8Array, message: Uint8Array): P
 
 // ── Codificaciones ──────────────────────────────────────
 
+/**
+ * Buffer solo existe en el fallback de Node (tests). Se declara la forma
+ * mínima que se usa en lugar de tirar de @types/node: los tipos de React
+ * Native 0.86 ya no traen Buffer en globalThis y el acceso directo dejó
+ * de compilar, pero esto es una app móvil, no un proyecto de Node.
+ */
+interface NodeBufferLike extends Uint8Array {
+  toString(encoding?: string): string;
+}
+
+const nodeBuffer = (
+  globalThis as {
+    Buffer?: { from(input: Uint8Array | string, encoding?: string): NodeBufferLike };
+  }
+).Buffer;
+
 export function bytesToBase64(bytes: Uint8Array): string {
   // React Native tiene btoa. En Node tests usar Buffer si existe.
   if (typeof btoa === "function") {
@@ -35,7 +51,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
     return btoa(bin);
   }
   // Fallback Node
-  return globalThis.Buffer.from(bytes).toString("base64");
+  return nodeBuffer!.from(bytes).toString("base64");
 }
 
 export function base64ToBytes(b64: string): Uint8Array {
@@ -45,7 +61,7 @@ export function base64ToBytes(b64: string): Uint8Array {
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
   }
-  return new Uint8Array(globalThis.Buffer.from(b64, "base64"));
+  return new Uint8Array(nodeBuffer!.from(b64, "base64"));
 }
 
 export function hexToBytes(hex: string): Uint8Array {
