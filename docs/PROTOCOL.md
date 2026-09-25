@@ -86,7 +86,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | Código | Cuándo |
 |---|---|
 | 1008 | Autenticación fallida, más de 20 mensajes sin autenticar, o sin autenticar tras `CodeTtlSeconds` + 60 s (180 s por defecto). |
-| 1009 | Frame demasiado grande: 16 KB antes de autenticar, 4 MB después. |
+| 1009 | Frame demasiado grande: 16 KB antes de autenticar, 16 MB después. |
 | 4001 | Dispositivo revocado o borrado (en caliente o al intentar autenticar). **El cliente no debe reconectar.** |
 
 ## Códigos de error
@@ -102,6 +102,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | `INTERNAL_ERROR` | Excepción inesperada en el agente. Ver logs. |
 | `RATE_LIMITED` | Demasiados intentos de emparejamiento o de suscripciones. |
 | `PAIRING_FAILED` | Código incorrecto o caducado. |
+| `PLUGIN_DISABLED` | El plugin de ese dominio está desactivado en el panel del PC (ver [`PLUGINS.md`](PLUGINS.md)). |
 
 ---
 
@@ -135,7 +136,14 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 | Action | Kind | Params | Data |
 |---|---|---|---|
 | `info` | request | — | `{ macAddress, broadcast, lanIp, hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, ramTotalMB, uptimeSec, timezone }` — `macAddress` (`AA:BB:…`) y `broadcast` son los del adaptador de la LAN, para Wake-on-LAN |
-| `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, ramPct, ramUsedMB, ramTotalMB, ts }` |
+| `info` extra (0.4) | | | además `gpuName`, `vramTotalMB`, `agentVersion` |
+| `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, cpuFreqMHz?, cpuTempC?, ramPct, ramUsedMB, ramTotalMB, gpu?: { name, usage, vramUsedMB, vramTotalMB, tempC }, disks: [{ name, label, totalGB, freeGB, usedPct }], net: { rxBps, txBps, iface, linkMbps }, uptimeSec, ts }` |
+
+Los campos con `?` son `null` cuando Windows no los expone a un proceso sin
+administrador: `cpuTempC` sale de las zonas térmicas ACPI (no del sensor del
+encapsulado), la GPU de los contadores "GPU Engine" (lo mismo que el
+Administrador de tareas) y `gpu.tempC` es siempre `null` por ahora. Dos
+clientes a la vez comparten la misma lectura (una muestra vale 700 ms).
 
 ### `input`
 
@@ -172,8 +180,28 @@ PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 |---|---|---|---|
 | `get` | request | — | `{ text, length, truncated }` — `text` va recortado a 1 000 000 caracteres |
 | `set` | request | `{ text }` (máx. 1 000 000 caracteres; `""` vacía) | `{ length }` |
+| `setImage` | request | `{ imageBase64 }` PNG/JPEG/GIF/BMP, máx. 14 MB de base64 | `{ bytes }` — se copia como PNG (con transparencia) y como mapa de bits |
 | `clear` | request | — | `{ cleared }` |
-| `watch` | subscribe | — | `{ text, length }` al suscribirse y en cada cambio; `text` va recortado a 4096 caracteres |
+| `watch` | subscribe | — | `{ type, text, length, width, height, files, fileCount, thumbBase64, isPrivate, historyVersion }` al suscribirse y en cada cambio. `type` = `text` \| `image` \| `files` \| `empty`; `text` va recortado a 4096 caracteres; `thumbBase64` (JPEG ≤ 320 px) solo para imágenes. Cuando `historyVersion` cambia, el historial tiene algo nuevo |
+
+Un único hilo STA del agente lee el portapapeles una vez por cambio y alimenta
+a la vez `watch` y el historial.
+
+### `cliphistory`
+
+Historial de todo lo copiado en el PC mientras el agente está abierto. Solo en
+memoria (máx. 200 entradas / 256 MB). Copiar algo que ya está lo sube arriba en
+vez de duplicarlo. No se guarda lo que los gestores de contraseñas marcan como
+privado (`ExcludeClipboardContentFromMonitorProcessing`,
+`CanIncludeInClipboardHistory = 0`…). Desactivar el plugin borra el historial.
+
+| Action | Params | Data |
+|---|---|---|
+| `list` | `{ offset?, limit?: 1–100 (50), type?: "text" \| "image" \| "files" }` | `{ version, total, items: [{ id, type, ts, preview, length, width, height, sizeBytes, files, fileCount, thumbBase64 }] }`, lo más reciente primero |
+| `get` | `{ id }` | texto: `{ id, type, text, length }`; imagen: `{ id, type, pngBase64, width, height, originalWidth, originalHeight }` (reducida a 2560 px de lado como mucho); archivos: `{ id, type, files }` |
+| `restore` | `{ id }` | `{ restored, type }` — lo vuelve a poner en el portapapeles del PC |
+| `delete` | `{ id }` | `{ deleted, version }` |
+| `clear` | — | `{ cleared, version }` |
 
 ### `applications`
 
@@ -203,7 +231,7 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 
 | Action | Params | Data | Destructivo |
 |---|---|---|---|
-| `list` | `{ limit?: 1–500 (50), filter? }` — ordenados por memoria | `{ count, processes: [{ pid, name, workingMB, threads, startTime }] }` | — |
+| `list` | `{ limit?: 1–500 (50), filter?, sort?: "memory" \| "cpu" \| "name" }` | `{ count, total, processes: [{ pid, name, workingMB, cpu, threads, startTime, windowTitle }] }` — `cpu` es el % de toda la máquina desde la llamada anterior (la primera espera 500 ms para medir) | — |
 | `kill` | `{ pid }` — mata el árbol entero; rechaza procesos del sistema y el propio agente | `{ killed, name }` | ✅ |
 
 ### `windows`
@@ -225,3 +253,60 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 | `volumeGet` | — | `{ volume: 0–100, mute }` |
 | `volumeSet` | `{ volume: 0–100 }` | `{ volume }` |
 | `volumeMute` | `{ mute?: bool }` — sin parámetro alterna | `{ mute }` |
+
+### `plugins`
+
+| Action | Params | Data |
+|---|---|---|
+| `list` | — | `{ plugins: [{ id, domain, name, description, category, version, builtIn, enabled, canDisable, sensitive, loaded, restartRequired, actions }] }` |
+
+Solo lectura: los plugins se activan y desactivan en el panel del PC. Detalles
+en [`PLUGINS.md`](PLUGINS.md).
+
+### `activity`
+
+| Action | Params | Data |
+|---|---|---|
+| `recent` | `{ limit?: 1–500 (100) }` | `{ events: [{ ts, kind, title, detail, level, device }] }`, lo más reciente primero |
+
+`kind`: `agent` (arranque), `session` (conectado / desconectado), `pairing`,
+`command` (del registro de auditoría, con un título legible) y `alert` (RAM ≥
+92 % o CPU ≥ 85 °C mientras alguien mira las métricas; una cada 15 min como
+mucho). `level`: `info` \| `warning` \| `error`.
+
+### `terminal` · desactivado por defecto
+
+Ejecuta comandos **como el usuario** (el agente nunca se eleva). Hay que
+activarlo en el panel del PC.
+
+| Action | Params | Data | Destructivo |
+|---|---|---|---|
+| `info` | — | `{ cwd, shell, shells, user, host }` | — |
+| `run` | `{ command (≤ 8 KB), shell?: "powershell" \| "pwsh" \| "cmd", timeoutSec?: 1–600 (60) }` | `{ stdout, stderr, exitCode, cwd, durationMs, timedOut, truncated }` | ✅ |
+
+Cada sesión del móvil tiene su directorio actual: en PowerShell se lee tras
+cada comando; en cmd, `cd`, `cd /d` y `X:` los resuelve el agente. La salida se
+recorta a 512 KB por flujo; al agotar el tiempo o cortarse la conexión se mata
+el árbol de procesos.
+
+### `files`
+
+| Action | Params | Data |
+|---|---|---|
+| `roots` | — | `{ folders: [{ name, path, kind }], drives: [{ name, path, kind, totalBytes, freeBytes }] }` |
+| `list` | `{ path, hidden?: bool }` | `{ path, parent, entries: [{ name, path, dir, size, modified, ext }], truncated }` — carpetas primero, máx. 2000 |
+| `open` | `{ path }` | `{ opened }` — con la app predeterminada del PC. **Rechaza programas y scripts** (`.exe`, `.bat`, `.ps1`, `.lnk`… y lo de `PATHEXT`) con `PERMISSION_DENIED` |
+| `reveal` | `{ path }` | `{ revealed }` — lo muestra seleccionado en el Explorador |
+| `read` | `{ path }` | `{ name, size, base64 }` — máx. 10 MB |
+
+Solo rutas locales absolutas: las UNC (`\\servidor\recurso`) se rechazan con
+`INVALID_PARAMS`, para que el móvil no pueda hacer que el PC se autentique
+contra otra máquina.
+
+### `network`
+
+| Action | Params | Data |
+|---|---|---|
+| `info` | — | `{ hostname, lanIp, interfaces: [{ name, description, type, up, speedMbps, mac, ipv4, ipv6, gateways, dns, primary }], tcp: { total, established, listeners } }` |
+| `connections` | `{ limit?: 1–500 (100) }` | `{ count, connections: [{ local, remote, state }] }` (sin loopback) |
+| `ping` | `{ host?, count?: 1–10 (4) }` — sin `host`, la puerta de enlace | `{ host, results: [ms \| null], avgMs, lossPct }` |

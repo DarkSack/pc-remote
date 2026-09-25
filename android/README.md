@@ -5,55 +5,51 @@ Cliente Android nativo. Sustituyó a la primera versión en React Native + Expo
 
 ## Stack
 
-- **Kotlin 2.4** (integrado en AGP 9) + **Jetpack Compose** (BOM 2026.09)
+- **Kotlin 2.4** (integrado en AGP 9) + **Jetpack Compose** (BOM 2026.09) + **Material 3**
+  (con `material3-adaptive-navigation-suite`: barra en móvil, rail en tablet)
+- Navigation Compose con rutas *type-safe*, ViewModel + StateFlow
 - **OkHttp 5** para WSS, con *pinning* del certificado por SHA-256
 - **BouncyCastle** para Ed25519 (Android Keystore solo lo soporta desde API 33)
 - **NsdManager** para descubrimiento mDNS (`_pcremote._tcp`)
 - **Android Keystore** (AES-256-GCM) para cifrar las credenciales de cada PC
+- **androidx.biometric** para el desbloqueo con huella / cara / PIN (opcional)
 - **kotlinx-serialization-json** para el protocolo
 
 `compileSdk` 37, `targetSdk` 36, `minSdk` 26 (Android 8.0).
 
-## Estado
+## Diseño
 
-- ✅ Descubrimiento: PCs emparejados + escaneo mDNS (varios PCs a la vez)
-- ✅ Emparejamiento por **QR** del panel (certificado fijado desde el inicio) o
-  con código de 6 dígitos (comprueba que la huella declarada coincide con la
-  de la conexión)
-- ✅ Dashboard: CPU/RAM en tiempo real, info del sistema, energía
-- ✅ **Touchpad**: arrastrar = mover, toque = clic, 2 dedos = clic derecho y
-  scroll, mantener = arrastrar; sensibilidad ajustable
-- ✅ **Teclado**: escribir texto, teclas especiales, atajos y F1–F12
-- ✅ **Multimedia**: lo que suena (con carátula), play/pausa/pistas, volumen
-- ✅ **Apps**: abrir cualquier app del PC con un toque. La lista se actualiza
-  sola al instalar o desinstalar, con los iconos reales, búsqueda, favoritas
-  (estrella) y recientes, guardadas por PC
-- ✅ **Portapapeles** en los dos sentidos
-- ✅ **Wake-on-LAN**: botón de encendido en la lista (aparece tras la primera
-  conexión, cuando la app ya conoce la MAC del PC)
-- ✅ Reconexión con backoff; no reintenta si el PC revocó el dispositivo o
-  cambió de certificado (botón "Reintentar"). Si vuelve la red (Wi-Fi), reintenta
-  al momento en vez de esperar al backoff
-- ✅ La conexión sigue a la app: con la app en segundo plano se mantiene 30 s
-  (para volver rápido) y luego se cierra; al volver se reconecta sola
-- ✅ Tras emparejar se abre directamente ese PC
-- ✅ Si el PC cambia de IP, la app lo reconoce por mDNS (huella del
-  certificado) y actualiza la dirección guardada
-- ✅ Volver a emparejar un PC sustituye la entrada anterior en vez de duplicarla
-- ⚠️ Todo lo anterior compila y la lógica pura tiene tests, pero **no se ha
-  probado aún en un móvil real**
+"Command Center personal": oscuro por defecto con un tema claro de verdad,
+un teal técnico como color de marca y superficies grafito por capas
+(`surfaceContainer*`), sin neón. Todo sale de `MaterialTheme.colorScheme` y
+de `PcRemoteTheme.extended` (éxito, aviso y un color por métrica), nunca de
+colores fijos en las pantallas.
 
-El escáner de QR lo proporciona Google Play services (sin permiso de cámara
-en la app). En móviles sin Play services, empareja con el código.
+| Oscuro | Claro | Tablet |
+|---|---|---|
+| ![](../docs/screenshots/home-dark.png) | ![](../docs/screenshots/home-light.png) | ![](../docs/screenshots/home-tablet.png) |
 
-Wake-on-LAN solo funciona si está activado en la BIOS/UEFI y en el adaptador
-de red del PC; con el "inicio rápido" de Windows algunos equipos no despiertan
-desde apagado.
+Pantallas: **Inicio** (estado, acciones rápidas, métricas con gráficas),
+**Control** (ratón, teclado, multimedia, atajos), **Apps** (lanzador, procesos,
+ventanas), **Actividad**, **Ajustes**, y desde Inicio **Terminal**,
+**Archivos**, **Red** y **Portapapeles** (historial con imágenes). Cada
+lista tiene estado de carga (*skeleton*), vacío y error con "Ver detalles".
+
+## Conexión
+
+- Una sola conexión por PC para todas las pantallas (`PcSession`).
+- Al volver a la app se comprueba o rehace la conexión según el tiempo que
+  estuvo fuera (Android congela las apps en segundo plano y el socket puede
+  quedar muerto sin saberlo). Ping cada 5 s mientras está abierta.
+- Si el PC cambió de IP se encuentra por mDNS (huella del certificado).
+- No reintenta si el PC revocó el dispositivo o cambió de certificado.
+- Las funciones cuyo plugin está desactivado en el PC lo dicen, en vez de
+  fallar.
 
 ## Tests
 
 ```powershell
-.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan (JVM, sin dispositivo)
+.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan, errores de conexión, historial de métricas (JVM)
 ```
 
 ### Migración de credenciales (0.1.0 → 0.2.0)
@@ -101,26 +97,21 @@ adb logcat | Select-String "PcRemote|AgentClient|CredentialsStore|AndroidRuntime
 ## Estructura
 
 ```
-android/
-├── build.gradle.kts, settings.gradle.kts, gradle.properties
-└── app/
-    ├── build.gradle.kts, proguard-rules.pro
-    └── src/main/
-        ├── AndroidManifest.xml
-        ├── res/values/{strings,themes}.xml
-        └── java/com/sack/pcremote/
-            ├── MainActivity.kt
-            ├── net/
-            │   ├── Protocol.kt       # tipos del protocolo WSS
-            │   ├── Crypto.kt         # Ed25519 vía BouncyCastle
-            │   ├── Discovery.kt      # NsdManager mDNS
-            │   ├── AgentClient.kt    # WSS + pinning + streams; PairingClient
-            │   ├── QrPayload.kt      # QR del panel
-            │   └── WakeOnLan.kt      # magic packet
-            ├── data/CredentialsStore.kt  # AES-GCM con Android Keystore
-            └── ui/
-                ├── PcRemoteApp.kt    # NavHost
-                ├── theme/Theme.kt
-                ├── screens/{Discovery,Pair,Dashboard}Screen.kt
-                └── remote/           # Touchpad, Keyboard, Media, Apps, Clipboard (paneles del dashboard)
+android/app/src/main/
+├── AndroidManifest.xml
+├── res/  (icono adaptativo + monocromo, temas de arranque, FileProvider)
+└── java/com/sack/pcremote/
+    ├── MainActivity.kt, AppGraph.kt
+    ├── net/        # Protocol, AgentClient, ConnectionProblem, Discovery, Crypto, QrPayload, WakeOnLan
+    ├── session/    # PcSession (una conexión por PC), PcViewModel
+    ├── data/       # CredentialsStore, SettingsStore, AppPrefs
+    └── ui/
+        ├── PcRemoteApp.kt            # navegación raíz
+        ├── theme/                    # Color, Theme (+ colores extendidos), Type
+        ├── components/               # tarjetas, gráficas, estados, háptica, marca…
+        ├── lock/                     # desbloqueo biométrico
+        ├── devices/                  # tus equipos, emparejar
+        └── pc/                       # PcShell, ConnectionScreen y:
+            ├── home/  control/  apps/  activity/  settings/
+            └── tools/                # Terminal, Archivos, Red, Portapapeles
 ```

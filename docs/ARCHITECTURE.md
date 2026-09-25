@@ -28,34 +28,54 @@
 
 ### Agente (`agent/`)
 
-- **PcRemote.Agent** — punto de entrada. Configura Serilog desde
-  `appsettings.json`, arranca el host y muestra la bandeja.
+- **PcRemote.Agent** — punto de entrada (`PcRemote.exe`, un solo archivo
+  autocontenido). Una única instancia, configuración por defecto embebida
+  (`Config/appsettings.defaults.json`, con `appsettings.json` opcionales al
+  lado del exe o en `%LOCALAPPDATA%\PcRemote\`), Serilog, host y bandeja
+  (Iniciar con Windows). Nombra explícitamente los módulos integrados: dentro
+  del exe no hay DLL que escanear.
 - **PcRemote.Core**
   - `Server/WebSocketServer` — Kestrel con dos puertos: WSS en la LAN para el
     móvil y HTTP en loopback para el panel.
   - `Auth/` — `PairingService` (códigos), `SessionManager`, `DeviceRepository`
     (SQLite), `DeviceAdmin` (revocar/borrar y cortar la conexión viva).
-  - `Router/` — `CommandRouter` e interfaces `ICommandModule` / `IStreamModule`.
+  - `Router/` — `CommandRouter` e interfaces `ICommandModule` / `IStreamModule`
+    / `IPluginMetadata`.
+  - `Plugins/` — `PluginManager` (activado o no, por dominio; el router
+    responde `PLUGIN_DISABLED`), carga de DLL externas y el dominio `plugins`.
+  - `Activity/` — eventos (sesiones, emparejamientos, alertas) y el dominio
+    `activity`, que los mezcla con la auditoría.
   - `Panel/` — endpoints y HTML del panel, *ring buffer* de logs.
   - `Discovery/` — publicación mDNS y elección de la IP de la LAN.
   - `Security/` — certificado autofirmado (se genera una vez y se reutiliza).
   - `Storage/` — SQLite; `CommandAuditLog` escribe `command_log` en lotes desde
     una cola, para que auditar nunca frene un comando.
-- **PcRemote.Modules.\*** — implementaciones de `ICommandModule`. Core las
-  descubre por reflexión al arrancar.
+- **PcRemote.Modules.\*** — implementaciones de `ICommandModule`: System,
+  SystemInfo (con un `HardwareSampler` compartido), Input, Clipboard (un hilo
+  STA que lee cada cambio una vez y alimenta `watch` y el historial),
+  Applications, Processes, Windows, Media, Terminal, Files y Network.
 
 ### Android (`android/`)
 
-- `net/AgentClient` — conexión WSS, autenticación, peticiones, streams,
-  reconexión con backoff. `PairingClient` para el primer emparejamiento.
+- `net/AgentClient` — conexión WSS, autenticación, peticiones, streams
+  (`stream()` se re-suscribe tras cada reconexión), reconexión con backoff,
+  `restart()` para descartar un socket zombi y `ping()`.
+  `ConnectionProblem` traduce los errores a mensajes para personas.
+  `PairingClient` para el primer emparejamiento.
+- `session/PcSession` — todo lo de un PC abierto: conexión, info, métricas y
+  su historial, latencia, plugins; ciclo de vida (primer plano / segundo
+  plano) y búsqueda por mDNS si cambió de IP. Vive en `PcViewModel`.
 - `net/Discovery` — mDNS con `NsdManager`.
 - `net/Crypto` — Ed25519 con BouncyCastle.
 - `data/CredentialsStore` — credenciales por PC.
 - `net/QrPayload`, `net/WakeOnLan` — QR del panel y magic packet.
-- `ui/` — Compose: descubrimiento, emparejamiento y dashboard. El dashboard
-  tiene **una sola conexión** que comparten sus secciones (`ui/remote/`:
-  touchpad, teclado, multimedia, apps, portapapeles); cambiar de sección no
-  reconecta ni vuelve a autenticar.
+- `data/SettingsStore` — preferencias de la app (tema, háptica, bloqueo…).
+- `ui/` — Compose + Material 3. `theme/` (paleta, tipografía, colores
+  extendidos), `components/` (PcStatusCard, SystemMetricCard, gráficas en
+  Canvas, estados vacío/error/skeleton, háptica), `devices/` (equipos y
+  emparejamiento), `pc/` (Inicio, Control, Apps, Actividad, Ajustes y las
+  herramientas) con `NavigationSuiteScaffold`: barra en móvil, rail en
+  tablet. Todas las pantallas de un PC comparten **una sola conexión**.
 
 ## Extensibilidad
 
@@ -130,7 +150,19 @@ FAILED (sin reintentos): auth rechazada, dispositivo revocado (4001) o
 certificado distinto del emparejado.
 ```
 
-Backoff: `1 → 2 → 4 → 8 → 16 → 30 s (tope)`. OkHttp envía ping cada 15 s.
+Backoff: `1 → 2 → 4 → 8 → 15 → 20 s (tope)`. OkHttp envía ping cada 10 s.
+
+Al volver a la app (`PcSession.onForeground`), según el tiempo fuera medido
+con `elapsedRealtime` (Android puede congelar la app y el temporizador de
+corte de 30 s no llega a saltar):
+
+- ≥ 30 s → `restart()`: el socket no es de fiar, se abre uno nuevo ya.
+- ≥ 5 s → `ping()`; si no vuelve en 2,5 s, `restart()`.
+- `RECONNECTING` → reintento inmediato; `DISCONNECTED` → `connect()`.
+
+Con la app abierta, un `ping.ping` cada 5 s mide la latencia; dos perdidos
+seguidos → `restart()`. Tras dos fallos seguidos se busca el PC por mDNS (por
+la huella del certificado) y, si cambió de IP, se guarda la nueva.
 
 ## Tipos de mensaje
 

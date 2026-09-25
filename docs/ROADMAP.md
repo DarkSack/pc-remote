@@ -60,12 +60,21 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Registro de auditoría (`command_log`, 30 días) visible en el panel.
 - [x] Wake-on-LAN desde el móvil (la MAC se aprende al conectar).
 - [x] `media.nowPlaying` como stream, con carátula.
+- [x] Ventanas y procesos en el móvil (con % de CPU y orden).
+- [x] Historial del portapapeles con imágenes (plugin propio, solo en memoria).
+- [x] Explorador de archivos, terminal, red y actividad.
 - Notificaciones de Windows reenviadas al móvil.
-- Ventanas y procesos en el móvil (el agente ya los tiene).
-- Historial de portapapeles con opt-in explícito y cifrado.
 - Macros y presets ("modo juego").
 - Streaming de pantalla (DXGI → H.264 → WebRTC).
-- Gestor de archivos.
+
+## Fase 6.5 · Producto · ✅ (sep 2026)
+
+- [x] Rediseño completo de la app (Material 3, identidad propia, tema claro,
+      tablet, accesibilidad, háptica).
+- [x] Reconexión fiable al volver a la app.
+- [x] Sistema de plugins (activar/desactivar desde el panel; DLL externas).
+- [x] Icono nuevo en Android, exe, bandeja y panel.
+- [x] `PcRemote.exe` único, sin instalar .NET; CI que lo compila con el APK.
 
 ## Fase 7 · Acceso por Internet (mucho después)
 

@@ -1,112 +1,128 @@
+<p align="center"><img src="docs/screenshots/app-icon.png" width="96" alt="PC Remote"></p>
+
 # PC Remote
 
-Controla tu PC Windows desde un teléfono Android en la misma red local: energía, estadísticas en vivo, ratón, teclado, portapapeles, apps, procesos, ventanas y multimedia.
+**Tu Command Center personal**: controla, monitoriza y administra tu PC con Windows desde el móvil Android, en la misma red local.
 
-Monorepo con dos partes:
+Energía, métricas en vivo (CPU, RAM, GPU, discos, red), ratón y teclado, multimedia, apps, procesos, ventanas, archivos, terminal, red y portapapeles con historial e imágenes. Todo cifrado y emparejado por dispositivo.
 
-- **`agent/`** — aplicación de bandeja para Windows en **.NET 10** (C#). Expone un WebSocket seguro (`wss://`), se anuncia por mDNS, ejecuta los comandos y sirve un panel web de administración en `localhost`.
-- **`android/`** — app nativa en **Kotlin + Jetpack Compose**.
-
-`mobile/` es la primera versión del cliente (React Native + Expo). Está **deprecada**: sufría cierres opacos en release y se sustituyó por `android/`. Se conserva como referencia hasta que la app Kotlin tenga todas sus pantallas.
-
-Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, descubrimiento por mDNS y autenticación Ed25519 por dispositivo.
-
----
-
-## Estado
-
-| Parte | Hecho | Pendiente |
-|---|---|---|
-| Agente | Los 9 módulos (`system`, `systeminfo`, `input`, `clipboard`, `media`, `windows`, `processes`, `applications`, `ping`), emparejamiento, revocación, panel web con QR y registro de auditoría | Eventos push, notificaciones de Windows |
-| Android | Descubrimiento, emparejamiento por código o QR, dashboard, energía, touchpad, teclado, multimedia, apps, portapapeles, Wake-on-LAN | Probarlo en un móvil real; ventanas y procesos |
-
-Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
+<p align="center">
+  <img src="docs/screenshots/home-dark.png" width="240" alt="Inicio, tema oscuro">
+  <img src="docs/screenshots/control.png" width="240" alt="Control: touchpad">
+  <img src="docs/screenshots/home-light.png" width="240" alt="Inicio, tema claro">
+</p>
 
 ---
 
-## Documentación
+## Empezar en 2 minutos
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — componentes, modelo de concurrencia, capas de seguridad.
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — protocolo WebSocket y **todos los comandos con sus parámetros reales**.
-- [`docs/PAIRING.md`](docs/PAIRING.md) — emparejamiento, autenticación, revocación y límites.
-- [`docs/APIS.md`](docs/APIS.md) — APIs de Windows que usa cada módulo.
-- [`docs/MVP.md`](docs/MVP.md) — alcance y criterios de aceptación del MVP.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — fases.
-- [`android/README.md`](android/README.md) — compilar e instalar la app.
+1. **En el PC**: descarga `PcRemote.exe` y ábrelo con doble clic. No hace falta instalar .NET ni escribir comandos.
+   La primera vez se abre solo el panel con un código QR (Windows pedirá permiso de firewall: acéptalo en redes privadas).
+2. **En el móvil**: instala `PcRemote.apk`, toca **Escanear QR** y apunta al panel.
+3. Listo: la app entra directamente al panel de control de tu PC cada vez que la abres.
 
----
+**¿Dónde descargo el exe y el APK?** Cada push compila los dos en GitHub Actions
+(pestaña *Actions* → última ejecución de **build** → *Artifacts*:
+`PcRemote-windows` y `PcRemote-android`). Al crear un tag `v*` se publican
+además como *Release*.
 
-## Estructura
+Para compilarlos tú mismo, ver [Compilar](#compilar).
 
-```
-pc-remote/
-├── docs/
-├── agent/                                # .NET 10
-│   ├── PcRemote.Agent.slnx
-│   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
-│   ├── global.json
-│   ├── src/
-│   │   ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
-│   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite
-│   │   ├── PcRemote.Modules.System/      # apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión (+ ping)
-│   │   ├── PcRemote.Modules.SystemInfo/  # info estática + stream de CPU/RAM
-│   │   ├── PcRemote.Modules.Input/       # ratón y teclado (SendInput)
-│   │   ├── PcRemote.Modules.Clipboard/   # leer, escribir, vigilar
-│   │   ├── PcRemote.Modules.Applications/# "Todas las apps" del menú Inicio (Store y Steam incluidos) + registro; iconos; lanzar
-│   │   ├── PcRemote.Modules.Processes/   # listar y matar
-│   │   ├── PcRemote.Modules.Windows/     # listar, enfocar, minimizar, maximizar, cerrar
-│   │   └── PcRemote.Modules.Media/       # SMTC + volumen
-│   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
-├── android/                              # Kotlin + Compose
-└── mobile/                               # DEPRECADO (React Native)
-```
+En la bandeja del sistema, el icono de PC Remote tiene **Iniciar con Windows**,
+el acceso al panel, la carpeta de plugins y los registros. Abrir el exe una
+segunda vez solo abre el panel.
 
 ---
 
-## Arrancar
+## Qué hay
 
-### Agente
+| Parte | Qué es |
+|---|---|
+| **`agent/`** | App de bandeja para Windows en **.NET 10** (C#), distribuida como un único `PcRemote.exe`. WebSocket seguro (`wss://`), anuncio por mDNS, panel web de administración en `localhost` y **plugins**. |
+| **`android/`** | App nativa en **Kotlin + Jetpack Compose + Material 3**: tema oscuro y claro, móvil y tablet. |
 
-Necesita el **SDK de .NET 10** y Windows 10 2004 o posterior.
+### La app
 
-```bash
+- **Inicio**: estado del PC de un vistazo (en línea, latencia, IP, tiempo encendido), acciones rápidas (bloquear, suspender, reiniciar, apagar… con confirmación), métricas en tiempo real con gráficas, herramientas e info del equipo.
+- **Control**: touchpad (gestos, arrastrar, franja de scroll para usarlo con una mano), teclado con modificadores, multimedia con carátula y volumen, atajos.
+- **Apps**: lanzador en rejilla con iconos reales, favoritas y recientes; abrir, enfocar y cerrar. Procesos (CPU, RAM, finalizar) y ventanas.
+- **Actividad**: línea de tiempo de conexiones, comandos y alertas.
+- **Herramientas**: Terminal (PowerShell / cmd), Archivos (explorar, abrir en el PC, bajar al móvil), Red (interfaces, conexiones, ping desde el PC), Portapapeles (**todo el historial del PC, con imágenes**, y enviar texto o imágenes al PC).
+- **Ajustes**: tema, colores dinámicos, vibración, confirmaciones, desbloqueo biométrico, dirección del PC, plugins.
+- Reconexión automática al volver a la app, aunque Android la haya congelado; si el PC cambió de IP lo vuelve a encontrar por mDNS. Wake-on-LAN para encenderlo.
+
+### Plugins
+
+Cada función es un plugin que se activa o desactiva desde el panel del PC; también se pueden añadir DLL externas. La **Terminal viene desactivada**. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
+
+---
+
+## Seguridad
+
+- Emparejamiento por QR (con la huella del certificado) o código de 6 dígitos; clave **Ed25519 por dispositivo**; certificado autofirmado **fijado** (*pinning*).
+- **Comandos tipados**, nunca "ejecuta este string" — salvo el plugin Terminal, apagado por defecto y activable solo desde el PC.
+- El agente corre como tu usuario, nunca como administrador. Revocación inmediata desde el panel.
+- El panel solo escucha en `localhost` y rechaza DNS rebinding y CSRF.
+- El historial del portapapeles vive solo en memoria y respeta lo que los gestores de contraseñas marcan como privado.
+
+Detalles en [`docs/PAIRING.md`](docs/PAIRING.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
+## Compilar
+
+### Agente → `PcRemote.exe`
+
+Necesita el **SDK de .NET 10** (para compilar; el exe resultante no lo necesita).
+
+```powershell
 cd agent
-dotnet run --project src/PcRemote.Agent
+.\build-exe.ps1            # tests + agent\publish\PcRemote.exe
 ```
 
-Aparece un icono en la bandeja. Desde él puedes abrir el **panel web** (`http://localhost:47810/`), que muestra el estado, genera el código de emparejamiento con su QR y permite revocar dispositivos.
+Para desarrollar: `dotnet run --project src/PcRemote.Agent` y `dotnet test PcRemote.Agent.slnx`.
 
-Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI) y `logs/`.
-
-Puertos por defecto (en `appsettings.json`):
+Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos y auditoría), `cert.pfx` + `cert.pass` (certificado TLS, contraseña cifrada con DPAPI), `plugins.json`, `plugins\` y `logs\`.
+La configuración por defecto va dentro del exe; para cambiarla crea `%LOCALAPPDATA%\PcRemote\appsettings.json` solo con las claves que quieras cambiar (ver `agent/src/PcRemote.Core/Config/appsettings.defaults.json`).
 
 | Puerto | Uso | Alcance |
 |---|---|---|
 | 47820 | `wss://…/ws`, protocolo del móvil | LAN |
 | 47810 | Panel web | solo `localhost` |
 
-Windows pedirá permiso de firewall para el 47820 la primera vez.
-
-Tests del agente (no necesitan el agente arrancado; uno lee la lista real de apps de este Windows):
-
-```bash
-cd agent
-dotnet test PcRemote.Agent.slnx
-```
-
-### Android
+### Android → APK
 
 Ver [`android/README.md`](android/README.md).
 
 ---
 
-## Principios
+## Documentación
 
-- **Comandos tipados** (`system.shutdown`), nunca "ejecuta este string".
-- **Cero confianza en el cliente**: el agente valida sesión, parámetros y límites en cada comando.
-- **Módulos independientes**, descubiertos por reflexión: un dominio nuevo es un proyecto nuevo, sin tocar Core.
-- **Mínimo privilegio**: el agente corre como el usuario, no como administrador.
-- **TLS desde el primer día**, con certificado autofirmado y *pinning* en el móvil.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — componentes, concurrencia, seguridad.
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — protocolo WebSocket y **todos los comandos**.
+- [`docs/PLUGINS.md`](docs/PLUGINS.md) — plugins integrados y cómo escribir uno.
+- [`docs/PAIRING.md`](docs/PAIRING.md) — emparejamiento, autenticación, revocación.
+- [`docs/APIS.md`](docs/APIS.md) — APIs de Windows por módulo.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — fases.
+- [`assets/brand/`](assets/brand) — logotipo (SVG) e icono.
+
+## Estructura
+
+```
+pc-remote/
+├── .github/workflows/build.yml     # PcRemote.exe + PcRemote.apk en cada push; Release con tags v*
+├── assets/brand/                   # marca: mark.svg, app-icon.svg
+├── docs/
+├── agent/                          # .NET 10
+│   ├── build-exe.ps1               # → agent/publish/PcRemote.exe
+│   ├── src/
+│   │   ├── PcRemote.Agent/         # exe de bandeja, icono, Iniciar con Windows, perfil de publicación
+│   │   ├── PcRemote.Core/          # WebSocket, emparejamiento, plugins, actividad, panel web, mDNS, SQLite
+│   │   └── PcRemote.Modules.*/     # System, SystemInfo, Input, Clipboard (+historial), Applications,
+│   │                               # Processes, Windows, Media, Terminal, Files, Network
+│   └── tests/PcRemote.Tests/
+└── android/                        # Kotlin + Compose + Material 3
+```
 
 ---
 

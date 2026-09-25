@@ -46,7 +46,21 @@ funciones que aún no existen.
   con `AdjustTokenPrivileges`, `LockWorkStation`, `SetForegroundWindow`, `PostMessage`.
 
 **Requiere Perf Counters** (`System.Diagnostics.PerformanceCounter`):
-- CPU hoy; GPU, disco, red y CPU por proceso cuando se implementen.
+- CPU (`Processor`), frecuencia (`Processor Information\% Processor Performance`),
+  GPU (`GPU Engine`, `GPU Adapter Memory`, leídos con `ReadCategory` en una
+  llamada) y temperatura ACPI (`Thermal Zone Information`).
+- Discos: `DriveInfo`. Red: `NetworkInterface.GetIPStatistics` (bytes/s por
+  diferencia). CPU por proceso: `Process.TotalProcessorTime` entre dos lecturas.
+
+## Módulos añadidos en 0.4
+
+| Módulo | APIs |
+|---|---|
+| Clipboard (historial) | `GetClipboardSequenceNumber`, `Clipboard.GetDataObject` en un hilo STA propio; formato `PNG` para conservar la transparencia; `ExcludeClipboardContentFromMonitorProcessing` / `CanIncludeInClipboardHistory` para respetar lo privado |
+| Terminal | `Process` con `powershell.exe -EncodedCommand` / `cmd.exe /d /s /c`, `Kill(entireProcessTree)` |
+| Files | `DirectoryInfo.EnumerateFileSystemInfos`, `SHGetKnownFolderPath` (Descargas), `ShellExecute` y `explorer.exe /select` |
+| Network | `NetworkInterface`, `IPGlobalProperties.GetActiveTcpConnections`, `Ping` |
+| Agente | `HKCU\…\Run` (Iniciar con Windows), mutex con nombre (una instancia) |
 
 ## Elevación
 
