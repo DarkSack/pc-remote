@@ -187,5 +187,5 @@ public sealed class ProcessesModule : ICommandModule, IPluginMetadata
         finally { proc.Dispose(); }
     }
 
-    private static string? TryGet(Func<string> fn) { try { return fn(); } catch { return null; } }
+    private static string? TryGet(Func<string?> fn) { try { return fn(); } catch { return null; } }
 }
