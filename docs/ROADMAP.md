@@ -23,7 +23,7 @@ MVP definido.
 
 - [x] `SystemModule` y `SystemInfoModule`.
 - [x] Subscribe / stream / unsubscribe (`IStreamModule`).
-- [x] Cliente móvil: primero en React Native (`mobile/`, deprecado), después
+- [x] Cliente móvil: primero en React Native (ya eliminado del repo), después
       reescrito en **Kotlin + Compose** (`android/`) por cierres en release.
 
 ## Fase 4 · Módulos del agente · ✅
@@ -52,7 +52,7 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Escáner del QR del panel: el certificado se fija desde el primer byte y
       no hace falta `pair_init`.
 - [ ] Probar todo lo anterior en un móvil real.
-- [ ] Borrar `mobile/` después de esa prueba.
+- [x] Borrar `mobile/` (React Native): eliminado del repositorio.
 - [ ] Firmar el APK con un keystore propio.
 
 ## Fase 6 · Extras

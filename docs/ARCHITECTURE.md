@@ -57,8 +57,6 @@
   touchpad, teclado, multimedia, apps, portapapeles); cambiar de sección no
   reconecta ni vuelve a autenticar.
 
-`mobile/` (React Native) está deprecado.
-
 ## Extensibilidad
 
 ```csharp

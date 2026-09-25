@@ -1,8 +1,7 @@
 # PC Remote — Android (Kotlin + Jetpack Compose)
 
-Cliente Android nativo. Sustituye a `mobile/` (React Native + Expo), que
-sufría cierres opacos en release por incompatibilidades de librerías nativas
-con la New Architecture.
+Cliente Android nativo. Sustituyó a la primera versión en React Native + Expo
+(ya eliminada del repositorio), que sufría cierres opacos en release.
 
 ## Stack
 
