@@ -17,9 +17,13 @@ namespace PcRemote.Modules.Windows;
 // antes de cada operación (IsWindowVisible).
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class WindowsModule : ICommandModule
+public sealed class WindowsModule : ICommandModule, IPluginMetadata
 {
     public string Domain => "windows";
+
+    public string DisplayName => "Ventanas";
+    public string Description => "Ver, enfocar, minimizar, maximizar y cerrar ventanas.";
+    public string Category => PluginCategories.Control;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {

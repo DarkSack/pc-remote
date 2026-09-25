@@ -12,9 +12,13 @@ namespace PcRemote.Modules.System;
 /// Runs in the user session (no admin needed for these actions).
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class SystemModule : ICommandModule
+public sealed class SystemModule : ICommandModule, IPluginMetadata
 {
     public string Domain => "system";
+
+    public string DisplayName => "Energía";
+    public string Description => "Apagar, reiniciar, suspender, hibernar, bloquear y cerrar sesión.";
+    public string Category => PluginCategories.System;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {

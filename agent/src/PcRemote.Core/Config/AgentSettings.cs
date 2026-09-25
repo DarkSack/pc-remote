@@ -35,8 +35,15 @@ public sealed class StorageSettings
     public string DatabasePath    { get; init; } = @"%LOCALAPPDATA%\PcRemote\agent.db";
     public string CertificatePath { get; init; } = @"%LOCALAPPDATA%\PcRemote\cert.pfx";
 
-    public string ResolvedDatabasePath    => Environment.ExpandEnvironmentVariables(DatabasePath);
-    public string ResolvedCertificatePath => Environment.ExpandEnvironmentVariables(CertificatePath);
+    /// <summary>External plugin DLLs (see docs/PLUGINS.md).</summary>
+    public string PluginsDirectory { get; init; } = @"%LOCALAPPDATA%\PcRemote\plugins";
+    /// <summary>Which plugins are on or off.</summary>
+    public string PluginsStatePath { get; init; } = @"%LOCALAPPDATA%\PcRemote\plugins.json";
+
+    public string ResolvedDatabasePath     => Environment.ExpandEnvironmentVariables(DatabasePath);
+    public string ResolvedCertificatePath  => Environment.ExpandEnvironmentVariables(CertificatePath);
+    public string ResolvedPluginsDirectory => Environment.ExpandEnvironmentVariables(PluginsDirectory);
+    public string ResolvedPluginsStatePath => Environment.ExpandEnvironmentVariables(PluginsStatePath);
 }
 
 public sealed class PairingSettings

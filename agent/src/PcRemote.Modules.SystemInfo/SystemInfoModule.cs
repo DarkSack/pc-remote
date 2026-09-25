@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using Microsoft.Win32;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
 
@@ -13,28 +14,30 @@ namespace PcRemote.Modules.SystemInfo;
 /// <summary>
 /// System info + realtime stats.
 ///   - "info"  → request/response: static host info.
-///   - "stats" → request/response: single snapshot of cpu%/ram%.
+///   - "stats" → request/response: single snapshot (see HardwareSampler).
 ///   - "stats" → subscribe:       stream of snapshots every params.intervalMs (default 1000).
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposable
+public sealed class SystemInfoModule : ICommandModule, IStreamModule, IPluginMetadata, IDisposable
 {
     public string Domain => "systeminfo";
+
+    public string DisplayName => "Monitor del sistema";
+    public string Description => "CPU, RAM, GPU, discos y red en tiempo real, e información del equipo.";
+    public string Category => PluginCategories.System;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("info",  "Static system information"),
-        new CommandDescriptor("stats", "Snapshot or stream of CPU / RAM usage"),
+        new CommandDescriptor("stats", "Snapshot or stream of CPU / RAM / GPU / disk / network usage"),
     };
 
     public IReadOnlySet<string> StreamActions { get; } = new HashSet<string> { "stats" };
 
-    private readonly PerformanceCounter _cpuCounter = new("Processor", "% Processor Time", "_Total");
-    private bool _cpuCounterPrimed;
+    private readonly HardwareSampler _sampler = new();
+    private readonly ActivityLog? _activity;
 
-    // PerformanceCounter is not thread-safe, and two phones (or a request next to
-    // a stream) sample it from different threads.
-    private readonly object _cpuLock = new();
+    public SystemInfoModule(ActivityLog? activity = null) => _activity = activity;
 
     // ── request/response ──────────────────────────────────
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
@@ -73,27 +76,19 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
             intervalMs = Math.Clamp(v, 250, 60_000);
         }
 
-        // Prime counter so the first value isn't 0.
-        bool prime;
-        lock (_cpuLock) prime = !_cpuCounterPrimed;
-        if (prime)
-        {
-            lock (_cpuLock) _cpuCounter.NextValue();
-            await Task.Delay(150, ct);
-            lock (_cpuLock) _cpuCounterPrimed = true;
-        }
-
         while (!ct.IsCancellationRequested)
         {
-            yield return SampleStats();
+            // Sampling sleeps briefly the very first time (counters need two
+            // readings); keep that off the stream's thread pool thread.
+            yield return await Task.Run(SampleStats, ct);
             try { await Task.Delay(intervalMs, ct); } catch (TaskCanceledException) { yield break; }
         }
     }
 
     // ── info ────────────────────────────────────────────
-    private static CommandResponse GetInfo(string id)
+    private CommandResponse GetInfo(string id)
     {
-        var mem = GetMemoryStatus();
+        var mem = Memory.Status();
         var lan = PcRemote.Core.Discovery.LanAddress.GuessInterface();
         return CommandResponse.Ok(id, new
         {
@@ -110,34 +105,44 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
             cpuModel   = GetCpuModel(),
             cpuCores   = Environment.ProcessorCount,
             ramTotalMB = mem?.totalMB ?? 0,
+            gpuName    = _sampler.Adapter?.Name,
+            vramTotalMB = _sampler.Adapter?.MemoryMB,
             uptimeSec  = Environment.TickCount64 / 1000,
             timezone   = TimeZoneInfo.Local.Id,
+            agentVersion = typeof(SystemInfoModule).Assembly.GetName().Version?.ToString(3),
         });
     }
 
     // ── stats snapshot (shared by request/response and stream) ──
     private object SampleStats()
     {
-        double cpu;
-        lock (_cpuLock)
-        {
-            if (!_cpuCounterPrimed)
-            {
-                _cpuCounter.NextValue();
-                Thread.Sleep(150);
-                _cpuCounterPrimed = true;
-            }
-            cpu = Math.Round(_cpuCounter.NextValue(), 1);
-        }
-        var mem = GetMemoryStatus();
+        var s = _sampler.Sample();
+        RaiseAlerts(s);
         return new
         {
-            cpu,
-            ramPct     = mem is null ? 0 : Math.Round(mem.Value.usedPct, 1),
-            ramUsedMB  = mem?.usedMB  ?? 0,
-            ramTotalMB = mem?.totalMB ?? 0,
-            ts         = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            cpu        = s.Cpu,
+            cpuFreqMHz = s.CpuFreqMHz,
+            cpuTempC   = s.CpuTempC,
+            ramPct     = s.RamPct,
+            ramUsedMB  = s.RamUsedMB,
+            ramTotalMB = s.RamTotalMB,
+            gpu        = s.Gpu,
+            disks      = s.Disks,
+            net        = s.Net,
+            uptimeSec  = s.UptimeSec,
+            ts         = s.Ts,
         };
+    }
+
+    /// <summary>Into the Activity timeline, at most every 15 minutes per kind. Only while someone watches stats.</summary>
+    private void RaiseAlerts(StatsSample s)
+    {
+        if (_activity is null) return;
+        var cooldown = TimeSpan.FromMinutes(15);
+        if (s.RamPct >= 92)
+            _activity.Alert("ram", $"Memoria RAM al {s.RamPct:0}%", $"{s.RamUsedMB / 1024.0:0.0} de {s.RamTotalMB / 1024.0:0.0} GB", cooldown);
+        if (s.CpuTempC is >= 85)
+            _activity.Alert("cputemp", $"Temperatura de la CPU: {s.CpuTempC:0} °C", null, cooldown);
     }
 
     // ── Helpers ─────────────────────────────────────────
@@ -163,34 +168,5 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
         catch { return "unknown"; }
     }
 
-    private static (double usedPct, long usedMB, long totalMB)? GetMemoryStatus()
-    {
-        var ms = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
-        if (!GlobalMemoryStatusEx(ref ms)) return null;
-        var totalMB = (long)(ms.ullTotalPhys / (1024 * 1024));
-        var availMB = (long)(ms.ullAvailPhys / (1024 * 1024));
-        var usedMB  = totalMB - availMB;
-        var pct     = totalMB == 0 ? 0 : (double)usedMB * 100 / totalMB;
-        return (pct, usedMB, totalMB);
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    private struct MEMORYSTATUSEX
-    {
-        public uint  dwLength;
-        public uint  dwMemoryLoad;
-        public ulong ullTotalPhys;
-        public ulong ullAvailPhys;
-        public ulong ullTotalPageFile;
-        public ulong ullAvailPageFile;
-        public ulong ullTotalVirtual;
-        public ulong ullAvailVirtual;
-        public ulong ullAvailExtendedVirtual;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
-
-    public void Dispose() => _cpuCounter.Dispose();
+    public void Dispose() => _sampler.Dispose();
 }

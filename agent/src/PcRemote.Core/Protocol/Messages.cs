@@ -13,7 +13,7 @@ public static class MessageKinds
     public const string Subscribe      = "subscribe";
     public const string Stream         = "stream";
     public const string Unsubscribe    = "unsubscribe";
-    public const string Event          = "event";
+    public const string Event          = "event";   // reserved, not emitted yet
     public const string Ping           = "ping";
     public const string Pong           = "pong";
     // Bootstrap
@@ -94,6 +94,7 @@ public static class ErrorCodes
     public const string InternalError     = "INTERNAL_ERROR";
     public const string RateLimited       = "RATE_LIMITED";
     public const string PairingFailed     = "PAIRING_FAILED";
+    public const string PluginDisabled    = "PLUGIN_DISABLED";
 }
 
 // ── Pairing / Auth messages ─────────────────────────────────────

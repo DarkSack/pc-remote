@@ -35,6 +35,10 @@ namespace PcRemote.Core.Panel;
 //   GET  /api/pair/qr?data=... → PNG del QR
 //   GET  /api/audit     → últimos comandos ejecutados (sin parámetros ni input continuo)
 //   GET  /api/logs      → últimas líneas del ring buffer
+//   GET  /api/plugins   → plugins (integrados y externos) y si están activos
+//   POST /api/plugins/{id}?enabled=bool → activar / desactivar
+//   POST /api/plugins/folder → abrir la carpeta de plugins externos en el Explorador
+//   GET  /logo.svg      → icono (favicon)
 // ══════════════════════════════════════════════════════════════
 public static class PanelEndpoints
 {
@@ -108,6 +112,45 @@ public static class PanelEndpoints
         {
             if (!Match(ctx)) { ctx.Response.StatusCode = 404; return; }
             await ServeHtml(ctx);
+        });
+
+        app.MapGet("/logo.svg", (HttpContext ctx) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            var asm = typeof(PanelEndpoints).Assembly;
+            var name = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("logo.svg", StringComparison.Ordinal));
+            if (name is null) return Results.NotFound();
+            using var stream = asm.GetManifestResourceStream(name)!;
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return Results.Bytes(ms.ToArray(), "image/svg+xml");
+        });
+
+        app.MapGet("/api/plugins", (HttpContext ctx, PcRemote.Core.Plugins.PluginManager plugins) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return Results.Json(new { directory = plugins.PluginsDirectory, plugins = plugins.Describe() }, Json);
+        });
+
+        app.MapPost("/api/plugins/folder", (HttpContext ctx, PcRemote.Core.Plugins.PluginManager plugins) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            Directory.CreateDirectory(plugins.PluginsDirectory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                ArgumentList = { plugins.PluginsDirectory },
+                UseShellExecute = false,
+            })?.Dispose();
+            return Results.Ok(new { opened = plugins.PluginsDirectory });
+        });
+
+        app.MapPost("/api/plugins/{id}", (HttpContext ctx, PcRemote.Core.Plugins.PluginManager plugins, string id, bool enabled) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return plugins.SetEnabled(id, enabled)
+                ? Results.Ok(new { id, enabled })
+                : Results.BadRequest(new { error = "Unknown plugin, or it cannot be disabled." });
         });
 
         app.MapGet("/api/status", (HttpContext ctx, AgentSettings s, X509Certificate2 cert) =>

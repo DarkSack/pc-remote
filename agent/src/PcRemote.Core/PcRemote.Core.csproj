@@ -24,5 +24,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Panel\panel.html" />
+    <EmbeddedResource Include="Panel\logo.svg" />
+    <EmbeddedResource Include="Config\appsettings.defaults.json" />
   </ItemGroup>
 </Project>

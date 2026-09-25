@@ -22,9 +22,13 @@ namespace PcRemote.Modules.Input;
 //     via SendInput con KEYEVENTF_UNICODE (no depende del layout).
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class InputModule : ICommandModule, ISessionAware
+public sealed class InputModule : ICommandModule, IPluginMetadata, ISessionAware
 {
     public string Domain => "input";
+
+    public string DisplayName => "Ratón y teclado";
+    public string Description => "Touchpad, clics, scroll, escritura y atajos de teclado.";
+    public string Category => PluginCategories.Control;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {

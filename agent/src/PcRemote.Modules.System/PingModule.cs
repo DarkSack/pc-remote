@@ -7,9 +7,14 @@ namespace PcRemote.Modules.System;
 /// Trivial module for Phase 2 verification: responds with pong + agent version.
 /// Kept alongside the real System module while other domains are wired up.
 /// </summary>
-public sealed class PingModule : ICommandModule
+public sealed class PingModule : ICommandModule, IPluginMetadata
 {
     public string Domain => "ping";
+
+    public string DisplayName => "Ping";
+    public string Description => "Comprobación de conexión y latencia.";
+    public string Category => PluginCategories.System;
+    public bool CanDisable => false;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {

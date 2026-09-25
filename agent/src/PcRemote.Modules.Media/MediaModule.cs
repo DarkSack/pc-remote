@@ -17,9 +17,13 @@ namespace PcRemote.Modules.Media;
 // (IAudioEndpointVolume vía COM).
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class MediaModule : ICommandModule, IStreamModule
+public sealed class MediaModule : ICommandModule, IPluginMetadata, IStreamModule
 {
     public string Domain => "media";
+
+    public string DisplayName => "Multimedia";
+    public string Description => "Lo que suena en el PC, controles de reproducción y volumen.";
+    public string Category => PluginCategories.Control;
 
     public IReadOnlySet<string> StreamActions { get; } = new HashSet<string> { "nowPlaying" };
 

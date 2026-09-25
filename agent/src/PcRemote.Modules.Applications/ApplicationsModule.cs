@@ -21,9 +21,13 @@ namespace PcRemote.Modules.Applications;
 // cola, así cargar 50 iconos al hacer scroll no retrasa un "abrir".
 // ══════════════════════════════════════════════════════════════
 [SupportedOSPlatform("windows")]
-public sealed class ApplicationsModule : ICommandModule, IStreamModule
+public sealed class ApplicationsModule : ICommandModule, IPluginMetadata, IStreamModule
 {
     public string Domain => "applications";
+
+    public string DisplayName => "Apps";
+    public string Description => "Abrir cualquier app instalada en el PC.";
+    public string Category => PluginCategories.Control;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
@@ -134,12 +138,16 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
 /// order, and icons loading while scrolling must not delay a launch.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class AppIconsModule : ICommandModule
+public sealed class AppIconsModule : ICommandModule, IPluginMetadata
 {
     private const int MaxIdsPerRequest = 50;
     private static readonly TimeSpan BatchTimeout = TimeSpan.FromSeconds(5);
 
     public string Domain => "appicons";
+
+    public string DisplayName => "Iconos de apps";
+    public string Description => "Los iconos reales de las apps del PC para el lanzador.";
+    public string Category => PluginCategories.Control;
 
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {

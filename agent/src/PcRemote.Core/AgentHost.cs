@@ -4,9 +4,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
 using PcRemote.Core.Discovery;
+using PcRemote.Core.Plugins;
 using PcRemote.Core.Router;
 using PcRemote.Core.Security;
 using PcRemote.Core.Server;
@@ -21,20 +23,24 @@ namespace PcRemote.Core;
 /// </summary>
 public static class AgentHost
 {
+    /// <param name="moduleAssemblies">
+    /// The built-in PcRemote.Modules.* assemblies, named explicitly by the exe. In a
+    /// single-file build they live inside the exe, so scanning the folder for DLLs
+    /// finds nothing and the agent would start with no modules at all.
+    /// </param>
     [SupportedOSPlatform("windows")]
-    public static IHost Build(Action<HostBuilderContext, IServiceCollection>? extraServices = null)
+    public static IHost Build(
+        IEnumerable<Assembly>? moduleAssemblies = null,
+        Action<HostBuilderContext, IServiceCollection>? extraServices = null)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             ContentRootPath = AppContext.BaseDirectory,
         });
 
-        builder.Configuration.AddJsonFile(
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-            optional: false,
-            // Settings are bound once at startup; watching the file only cost a
-            // FileSystemWatcher and suggested that edits apply live. They do not.
-            reloadOnChange: false);
+        // Settings are bound once at startup; watching the files only cost a
+        // FileSystemWatcher and suggested that edits apply live. They do not.
+        AgentConfiguration.AddSources(builder.Configuration);
 
         // Every ILogger<T> goes to Serilog (file + the panel's ring buffer). Without
         // this the host kept its default console/debug providers: a WinExe has no
@@ -64,8 +70,21 @@ public static class AgentHost
         builder.Services.AddSingleton<SessionManager>();
         builder.Services.AddSingleton<DeviceAdmin>();
 
-        // Router + modules (via reflection on loaded assemblies)
-        RegisterModules(builder.Services);
+        // Activity timeline (sessions, pairings, alerts) for the phone.
+        builder.Services.AddSingleton<ActivityLog>();
+
+        // Plugins: which modules exist, where they came from, which are on.
+        var pluginState = new PluginState(agentSettings.Storage.ResolvedPluginsStatePath);
+        var pluginLog = new Serilog.Extensions.Logging.SerilogLoggerFactory(Log.Logger).CreateLogger("Plugins");
+        var registry = PluginLoader.Discover(agentSettings.Storage.ResolvedPluginsDirectory, pluginState, pluginLog);
+        builder.Services.AddSingleton(pluginState);
+        builder.Services.AddSingleton(registry);
+        builder.Services.AddSingleton<PluginManager>();
+
+        // Router + modules (built-in, core and enabled external plugins)
+        RegisterModules(builder.Services, moduleAssemblies ?? Array.Empty<Assembly>(), registry);
+        builder.Services.AddSingleton<ICommandModule, PluginsModule>();
+        builder.Services.AddSingleton<ICommandModule, ActivityModule>();
         builder.Services.AddSingleton<CommandRouter>();
 
         // Networking
@@ -84,39 +103,46 @@ public static class AgentHost
     }
 
     /// <summary>
-    /// Discovers every non-abstract type implementing <see cref="ICommandModule"/> and
-    /// registers it as singleton. Loads PcRemote.Modules.*.dll from the executable's
-    /// directory first because .NET otherwise only loads them lazily on first use.
+    /// Registers every non-abstract <see cref="ICommandModule"/> as a singleton, from
+    /// the built-in assemblies, any PcRemote.Modules.*.dll next to the exe (a
+    /// regular, non-single-file build) and the external plugins that loaded.
     /// </summary>
-    private static void RegisterModules(IServiceCollection services)
+    private static void RegisterModules(IServiceCollection services, IEnumerable<Assembly> builtIn, PluginRegistry registry)
     {
-        // Force-load every PcRemote.Modules.* assembly next to the exe so reflection sees them.
-        var baseDir = AppContext.BaseDirectory;
-        foreach (var dll in Directory.GetFiles(baseDir, "PcRemote.Modules.*.dll"))
+        var assemblies = new List<Assembly>(builtIn);
+        foreach (var dll in Directory.GetFiles(AppContext.BaseDirectory, "PcRemote.Modules.*.dll"))
         {
-            try { Assembly.LoadFrom(dll); }
+            try { assemblies.Add(Assembly.LoadFrom(dll)); }
             catch { /* skip broken */ }
         }
 
         var registered = new HashSet<Type>();
+        foreach (var assembly in assemblies.Distinct())
+            RegisterFrom(assembly, services, registered, external: null, registry);
 
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        foreach (var plugin in registry.External.Where(p => p.Loaded && p.Assembly is not null))
         {
-            if (assembly.IsDynamic) continue;
-            if (!assembly.GetName().Name?.StartsWith("PcRemote.Modules.") ?? true) continue;
+            var before = registered.Count;
+            RegisterFrom(plugin.Assembly!, services, registered, plugin, registry);
+            if (registered.Count == before) plugin.Error = "La DLL no contiene ningún ICommandModule.";
+        }
+    }
 
-            Type[] types;
-            try { types = assembly.GetTypes(); }
-            catch (ReflectionTypeLoadException ex) { types = ex.Types.Where(t => t is not null).Cast<Type>().ToArray(); }
+    private static void RegisterFrom(Assembly assembly, IServiceCollection services, HashSet<Type> registered,
+        ExternalPlugin? external, PluginRegistry registry)
+    {
+        Type[] types;
+        try { types = assembly.GetTypes(); }
+        catch (ReflectionTypeLoadException ex) { types = ex.Types.Where(t => t is not null).Cast<Type>().ToArray(); }
 
-            foreach (var type in types)
-            {
-                if (type.IsAbstract || type.IsInterface) continue;
-                if (!typeof(ICommandModule).IsAssignableFrom(type)) continue;
-                if (!registered.Add(type)) continue;
+        foreach (var type in types)
+        {
+            if (type.IsAbstract || type.IsInterface) continue;
+            if (!typeof(ICommandModule).IsAssignableFrom(type)) continue;
+            if (!registered.Add(type)) continue;
 
-                services.AddSingleton(typeof(ICommandModule), type);
-            }
+            services.AddSingleton(typeof(ICommandModule), type);
+            if (external is not null) registry.MapType(type, external);
         }
     }
 }

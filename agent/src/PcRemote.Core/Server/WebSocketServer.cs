@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
 using PcRemote.Core.Panel;
@@ -41,8 +42,11 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     /// <summary>Largest frame accepted before authenticating. Bootstrap messages are tiny.</summary>
     private const int MaxUnauthenticatedMessageBytes = 16 * 1024;
 
-    /// <summary>Largest frame once authenticated. clipboard.set allows 1M chars (up to ~3 MB of UTF-8 + escaping).</summary>
-    private const int MaxMessageBytes = 4 * 1024 * 1024;
+    /// <summary>
+    /// Largest frame once authenticated. clipboard.set allows 1M chars (up to ~3 MB
+    /// of UTF-8 + escaping); clipboard.setImage carries up to 14 MB of base64.
+    /// </summary>
+    private const int MaxMessageBytes = 16 * 1024 * 1024;
 
     /// <summary>Messages tolerated without authenticating before the socket is dropped.</summary>
     private const int MaxUnauthenticatedMessages = 20;
@@ -61,6 +65,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     private readonly DeviceAdmin       _deviceAdmin;
     private readonly CommandRouter     _router;
     private readonly PcRemote.Core.Storage.CommandAuditLog _audit;
+    private readonly ActivityLog _activity;
+    private readonly PcRemote.Core.Plugins.PluginManager _plugins;
     private readonly ILogger<WebSocketServer> _logger;
 
     private WebApplication? _app;
@@ -81,6 +87,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         DeviceAdmin deviceAdmin,
         CommandRouter router,
         PcRemote.Core.Storage.CommandAuditLog audit,
+        ActivityLog activity,
+        PcRemote.Core.Plugins.PluginManager plugins,
         ILogger<WebSocketServer> logger)
     {
         _settings    = settings;
@@ -92,6 +100,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _deviceAdmin = deviceAdmin;
         _router      = router;
         _audit       = audit;
+        _activity    = activity;
+        _plugins     = plugins;
         _logger      = logger;
     }
 
@@ -134,6 +144,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_devices);
         builder.Services.AddSingleton(_deviceAdmin);
         builder.Services.AddSingleton(_audit);
+        builder.Services.AddSingleton(_plugins);
+        builder.Services.AddSingleton(_activity);
 
         _app = builder.Build();
 
@@ -244,6 +256,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
                     catch (Exception ex) { _logger.LogWarning(ex, "{Module} failed to clean up a session", aware.GetType().Name); }
                 }
                 _logger.LogInformation("Session {Session} ended", Short(conn.Session.SessionId));
+                _activity.Add(ActivityKinds.Session, "Dispositivo desconectado", conn.ClientIp,
+                    device: conn.Session.DeviceName);
             }
             _connections.Unregister(tracked.Id);
         }
@@ -424,6 +438,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _devices.Insert(device);
 
         _logger.LogInformation("Paired new device: {Name} ({Id}) from {Ip}", device.Name, device.Id, conn.ClientIp);
+        _activity.Add(ActivityKinds.Pairing, "Nuevo dispositivo emparejado", conn.ClientIp, device: device.Name);
 
         await SendAsync(conn, new PairResultMessage(
             Kind:            MessageKinds.PairResult,
@@ -517,6 +532,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _devices.TouchLastSeen(device.Id);
         _logger.LogInformation("Authenticated {Name} from {Ip} → session {Sess}",
             device.Name, conn.ClientIp, Short(session.SessionId));
+        _activity.Add(ActivityKinds.Session, "Dispositivo conectado", conn.ClientIp, device: device.Name);
 
         await SendAsync(conn, new AuthResultMessage(
             Kind:      MessageKinds.AuthResult,
@@ -634,6 +650,13 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             return;
         }
 
+        if (!_plugins.IsEnabled(req.Domain))
+        {
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.PluginDisabled,
+                $"The '{req.Domain}' plugin is disabled on this PC. Enable it in the agent's panel."), outerCt);
+            return;
+        }
+
         if (module is not IStreamModule streamer || !streamer.StreamActions.Contains(req.Action))
         {
             await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
@@ -666,7 +689,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             {
                 await foreach (var item in streamer.StartStreamAsync(req.Action, req.Params, session, cts.Token))
                 {
-                    if (cts.IsCancellationRequested || !SessionAlive(conn)) break;
+                    // A plugin switched off in the panel stops its live streams too.
+                    if (cts.IsCancellationRequested || !SessionAlive(conn) || !_plugins.IsEnabled(req.Domain)) break;
                     await SendAsync(conn, new
                     {
                         kind = MessageKinds.Stream,

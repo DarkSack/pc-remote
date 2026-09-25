@@ -1,0 +1,77 @@
+# Builds the two things a user installs, on every push and PR:
+#   - PcRemote.exe  (Windows agent, one self-contained file)
+#   - PcRemote.apk  (Android app, debug-signed)
+# Both are downloadable from the run's "Artifacts". Pushing a tag v* also
+# publishes them as a GitHub Release.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: agent/global.json
+      - name: Test
+        # AppsFolderSourceTests reads the Start menu of a real desktop; CI images have none.
+        run: dotnet test PcRemote.Agent.slnx -c Release --filter "FullyQualifiedName!~AppsFolderSourceTests"
+      - name: Publish PcRemote.exe
+        run: dotnet publish src/PcRemote.Agent -p:PublishProfile=win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PcRemote-windows
+          path: agent/publish/PcRemote.exe
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Build and test
+        # gradle.properties points Java at the Windows certificate store; override it here.
+        run: bash ./gradlew --no-daemon "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" testDebugUnitTest assembleRelease
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk PcRemote.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PcRemote-android
+          path: android/PcRemote.apk
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [agent, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/PcRemote.exe
+            dist/PcRemote.apk

@@ -1,40 +1,44 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
+using PcRemote.Core.Plugins;
 using PcRemote.Core.Security;
 using PcRemote.Core.Server;
 
 namespace PcRemote.Agent.Tray;
 
 /// <summary>
-/// Tray icon: listening URL, LAN IP, cert fingerprint, active connections,
-/// pair code notifications, and Manage devices dialog.
+/// Tray icon. Double-click opens the panel (pairing QR, devices, plugins). The
+/// menu shows the address, connections and devices, and has "Iniciar con
+/// Windows". The first time (no device paired yet) the panel opens by itself,
+/// so a new user goes from double-clicking the exe straight to the QR.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private readonly IServiceProvider _services;
     private readonly Action _onExit;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _connectionsItem;
     private readonly ToolStripMenuItem _devicesItem;
     private readonly SynchronizationContext _uiCtx;
+    private readonly AgentSettings _settings;
 
-    public TrayApplicationContext(IServiceProvider services, Action onExit)
+    public TrayApplicationContext(IServiceProvider services, Action onExit, bool startedByWindows)
     {
-        _services = services;
         _onExit   = onExit;
         _uiCtx    = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        _settings = services.GetRequiredService<AgentSettings>();
 
-        var settings    = services.GetRequiredService<AgentSettings>();
         var certificate = services.GetRequiredService<X509Certificate2>();
         var connections = services.GetRequiredService<ConnectionManager>();
         var pairing     = services.GetRequiredService<PairingService>();
         var devices     = services.GetRequiredService<DeviceRepository>();
+        var plugins     = services.GetRequiredService<PluginManager>();
 
         _statusItem      = new ToolStripMenuItem { Enabled = false };
         _connectionsItem = new ToolStripMenuItem { Enabled = false };
@@ -42,101 +46,125 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon = new NotifyIcon
         {
-            Icon    = SystemIcons.Information,
+            Icon    = LoadIcon(),
             Visible = true,
-            Text    = "PC Remote — starting…",
+            Text    = "PC Remote — iniciando…",
         };
+        _notifyIcon.DoubleClick += (_, _) => OpenPanel(_settings.Panel.Port);
 
-        RebuildStatus(settings, certificate, connections, devices);
-        _notifyIcon.ContextMenuStrip = BuildMenu(settings, certificate, devices);
+        RebuildStatus(certificate, connections, devices);
+        _notifyIcon.ContextMenuStrip = BuildMenu(certificate, plugins);
 
-        connections.ConnectionsChanged += (_, _) => Post(() =>
-            RebuildStatus(settings, certificate, connections, devices));
+        connections.ConnectionsChanged += (_, _) => Post(() => RebuildStatus(certificate, connections, devices));
 
         pairing.CodeIssued += (_, code) => Post(() => ShowPairCode(code));
 
-        _notifyIcon.ShowBalloonTip(
-            3000,
-            "PC Remote",
-            $"Listening on wss://{GetPrimaryIp()}:{settings.WebSocket.Port}",
-            ToolTipIcon.Info);
+        Autostart.RepairIfMoved();
+
+        if (devices.List().All(d => d.Revoked) && _settings.Panel.Enabled && !startedByWindows)
+        {
+            // First run: straight to the QR.
+            OpenPanel(_settings.Panel.Port);
+        }
+        else if (!startedByWindows)
+        {
+            _notifyIcon.ShowBalloonTip(3000, "PC Remote",
+                $"Activo en {GetPrimaryIp()}. Doble clic en el icono para abrir el panel.", ToolTipIcon.Info);
+        }
+    }
+
+    public static void OpenPanel(int port) => OpenShell($"http://localhost:{port}/");
+
+    private static void OpenShell(string target)
+    {
+        try { Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true })?.Dispose(); }
+        catch { /* no browser / folder gone: nothing useful to do */ }
+    }
+
+    private static Icon LoadIcon()
+    {
+        using var stream = typeof(TrayApplicationContext).Assembly.GetManifestResourceStream("PcRemote.Agent.app.ico");
+        return stream is null ? SystemIcons.Application : new Icon(stream, SystemInformation.SmallIconSize);
     }
 
     private void ShowPairCode(PairingCode code)
     {
         _notifyIcon.ShowBalloonTip(
-            code.ClientIp.Length > 0 ? 20_000 : 10_000,
-            $"Pair code: {code.Code}",
-            $"Enter this code on the device requesting pairing from {code.ClientIp}. Expires in {(int)(code.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds}s.",
+            20_000,
+            $"Código de emparejamiento: {code.Code}",
+            $"Escríbelo en el móvil que lo pide desde {code.ClientIp}. Caduca en {(int)(code.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds} s.",
             ToolTipIcon.Warning);
     }
 
-    private void RebuildStatus(AgentSettings s, X509Certificate2 cert, ConnectionManager cm, DeviceRepository devices)
+    private void RebuildStatus(X509Certificate2 cert, ConnectionManager cm, DeviceRepository devices)
     {
         var ip          = GetPrimaryIp();
-        var fingerprint = CertificateProvider.GetFingerprint(cert);
         var active      = cm.ActiveCount;
-        var shortPrint  = fingerprint.Length >= 16 ? fingerprint[..16] : fingerprint;
         var deviceCount = devices.List().Count(d => !d.Revoked);
 
-        _statusItem.Text      = $"Listening: wss://{ip}:{s.WebSocket.Port}";
-        _connectionsItem.Text = $"Active connections: {active}";
-        _devicesItem.Text     = $"Paired devices: {deviceCount}";
-        _notifyIcon.Text      = $"PC Remote · {active} conn · {deviceCount} devices · cert {shortPrint}…";
+        _statusItem.Text      = $"Escuchando en {ip}:{_settings.WebSocket.Port}";
+        _connectionsItem.Text = $"Conexiones activas: {active}";
+        _devicesItem.Text     = $"Dispositivos emparejados: {deviceCount}";
+        // NotifyIcon.Text is limited to 127 characters.
+        _notifyIcon.Text      = $"PC Remote · {active} conexión(es) · {deviceCount} dispositivo(s)";
     }
 
-    private ContextMenuStrip BuildMenu(AgentSettings settings, X509Certificate2 cert, DeviceRepository devices)
+    private ContextMenuStrip BuildMenu(X509Certificate2 cert, PluginManager plugins)
     {
         var menu = new ContextMenuStrip();
+
+        if (_settings.Panel.Enabled)
+        {
+            var openPanel = new ToolStripMenuItem("Abrir panel") { Font = new Font(menu.Font, FontStyle.Bold) };
+            openPanel.Click += (_, _) => OpenPanel(_settings.Panel.Port);
+            menu.Items.Add(openPanel);
+            menu.Items.Add(new ToolStripSeparator());
+        }
 
         menu.Items.Add(_statusItem);
         menu.Items.Add(_connectionsItem);
         menu.Items.Add(_devicesItem);
         menu.Items.Add(new ToolStripSeparator());
 
-        var fingerprintItem = new ToolStripMenuItem("Copy cert fingerprint");
+        var autostart = new ToolStripMenuItem("Iniciar con Windows") { CheckOnClick = true, Checked = Autostart.IsEnabled };
+        autostart.CheckedChanged += (_, _) =>
+        {
+            try { Autostart.Set(autostart.Checked); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"No se pudo cambiar: {ex.Message}", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+        menu.Items.Add(autostart);
+
+        var fingerprintItem = new ToolStripMenuItem("Copiar huella del certificado");
         fingerprintItem.Click += (_, _) =>
         {
             Clipboard.SetText(CertificateProvider.GetFingerprint(cert));
-            _notifyIcon.ShowBalloonTip(2000, "Copied", "SHA-256 fingerprint copied to clipboard.", ToolTipIcon.Info);
+            _notifyIcon.ShowBalloonTip(2000, "Copiado", "Huella SHA-256 copiada al portapapeles.", ToolTipIcon.Info);
         };
         menu.Items.Add(fingerprintItem);
 
-        if (settings.Panel.Enabled)
+        var pluginsFolder = new ToolStripMenuItem("Abrir carpeta de plugins");
+        pluginsFolder.Click += (_, _) =>
         {
-            var openPanel = new ToolStripMenuItem("Open web panel…") { Font = new Font(menu.Font, FontStyle.Bold) };
-            openPanel.Click += (_, _) =>
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName        = $"http://localhost:{settings.Panel.Port}/",
-                    UseShellExecute = true,
-                });
-            };
-            menu.Items.Add(openPanel);
-        }
+            Directory.CreateDirectory(plugins.PluginsDirectory);
+            OpenShell(plugins.PluginsDirectory);
+        };
+        menu.Items.Add(pluginsFolder);
 
-        var manageDevices = new ToolStripMenuItem("Manage devices…");
-        manageDevices.Click += (_, _) => ShowDevicesDialog(devices);
-        menu.Items.Add(manageDevices);
-
-        var openLogs = new ToolStripMenuItem("Open logs folder");
+        var openLogs = new ToolStripMenuItem("Abrir carpeta de registros");
         openLogs.Click += (_, _) =>
         {
             var logsPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PcRemote", "logs");
-            if (!Directory.Exists(logsPath)) Directory.CreateDirectory(logsPath);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName        = logsPath,
-                UseShellExecute = true,
-            });
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PcRemote", "logs");
+            Directory.CreateDirectory(logsPath);
+            OpenShell(logsPath);
         };
         menu.Items.Add(openLogs);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) =>
+        menu.Items.Add("Salir", null, (_, _) =>
         {
             _notifyIcon.Visible = false;
             _onExit();
@@ -144,63 +172,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         });
 
         return menu;
-    }
-
-    private async void ShowDevicesDialog(DeviceRepository devices)
-    {
-        var admin = _services.GetRequiredService<DeviceAdmin>();
-        var list = devices.List();
-        if (list.Count == 0)
-        {
-            MessageBox.Show(
-                "No devices paired yet. Open the mobile app and follow the pairing flow.",
-                "PC Remote — devices",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            return;
-        }
-
-        var lines = list.Select(d =>
-        {
-            var last = d.LastSeenAt is null ? "never" : d.LastSeenAt.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm");
-            var status = d.Revoked ? "REVOKED" : "active";
-            return $"[{status}] {d.Name}\n  id={d.Id}\n  paired={d.PairedAt.LocalDateTime:yyyy-MM-dd HH:mm}\n  lastSeen={last}";
-        });
-
-        var body = string.Join("\n\n", lines);
-        body += "\n\nCopy the ID of the device you want to revoke and press OK to enter it.";
-
-        var result = MessageBox.Show(body, "PC Remote — devices", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
-        if (result != DialogResult.OK) return;
-
-        var idToRevoke = Microsoft.VisualBasic.Interaction.InputBox(
-            "Device ID to revoke (leave empty to cancel):",
-            "PC Remote — revoke device",
-            "");
-
-        if (string.IsNullOrWhiteSpace(idToRevoke)) return;
-        var d = devices.Get(idToRevoke.Trim());
-        if (d is null)
-        {
-            MessageBox.Show("No device with that ID.", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        // Revoke also closes the device's live connection; before, the row was
-        // marked revoked but an already-authenticated phone kept working.
-        int closed;
-        try
-        {
-            closed = await admin.RevokeAsync(d.Id);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Could not revoke '{d.Name}': {ex.Message}", "PC Remote",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
-        }
-        MessageBox.Show(
-            $"Revoked '{d.Name}'. Closed {closed} live connection(s).",
-            "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void Post(Action a) => _uiCtx.Post(_ => a(), null);

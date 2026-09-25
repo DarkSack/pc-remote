@@ -4,19 +4,43 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>PC Remote · Panel</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg" />
+<meta name="color-scheme" content="dark light" />
 <style>
+  /* Same palette as the Android app (ui/theme/Color.kt). */
   :root {
-    --bg: #0f172a;
-    --bg-alt: #111827;
-    --card: #1a2232;
-    --border: #243043;
-    --text: #e6edf3;
-    --dim: #8b95a5;
-    --muted: #4a556b;
-    --accent: #60a5fa;
-    --success: #34d399;
-    --warn: #fbbf24;
-    --danger: #f87171;
+    --bg: #0b1013;
+    --bg-alt: #11181c;
+    --card: #151d21;
+    --border: #253035;
+    --text: #e3eceb;
+    --dim: #93a3a1;
+    --muted: #5d6b68;
+    --accent: #2dd4bf;
+    --on-accent: #00302a;
+    --success: #6fdc8c;
+    --warn: #f5c451;
+    --danger: #ff8a80;
+    --mark-line: #e6f2f0;
+    --code-bg: #070b0d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f7f7;
+      --bg-alt: #eaf0ef;
+      --card: #ffffff;
+      --border: #d9e2e0;
+      --text: #151d1c;
+      --dim: #52605d;
+      --muted: #8a9794;
+      --accent: #00796b;
+      --on-accent: #ffffff;
+      --success: #1e7d3a;
+      --warn: #9a6700;
+      --danger: #c62828;
+      --mark-line: #1d2a2d;
+      --code-bg: #0f1518;
+    }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -29,8 +53,10 @@
   header {
     padding: 20px 24px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    background: linear-gradient(180deg, var(--bg-alt), var(--bg));
+    background: var(--bg-alt);
   }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { width: 36px; height: 36px; flex: none; }
   h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
   .sub { color: var(--dim); font-size: 12px; margin-top: 2px; }
   .container { max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; gap: 20px;
@@ -58,14 +84,14 @@
   .badge.warn .dot { background: var(--warn); }
   .badge.danger .dot { background: var(--danger); }
   button {
-    background: var(--accent); color: #0b1224; border: 0;
+    background: var(--accent); color: var(--on-accent); border: 0;
     padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px;
     cursor: pointer; transition: opacity 0.15s;
   }
   button:hover { opacity: 0.9; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--border); }
-  button.danger { background: var(--danger); color: #0b1224; }
+  button.danger { background: var(--danger); color: #1a0000; }
   button.small { padding: 4px 10px; font-size: 11px; }
   .pair-code {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -83,7 +109,7 @@
        font-size: 10px; }
   .mono { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); }
   pre.logs {
-    background: #05080f; color: #a3b1c6; margin: 0;
+    background: var(--code-bg); color: #b8c7c4; margin: 0;
     padding: 12px; border-radius: 8px; font-size: 11px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     max-height: 340px; overflow: auto;
@@ -95,13 +121,36 @@
   .log-level-DBG, .log-level-Debug { color: var(--dim); }
   .flex-between { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .ttl { font-size: 11px; color: var(--warn); text-align: center; margin-top: 6px; }
+  .plugin { display: flex; gap: 16px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--border); }
+  .plugin:first-child { border-top: 0; }
+  .plugin .info { flex: 1; min-width: 0; }
+  .plugin .name { font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .plugin .desc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .plugin .meta { color: var(--muted); font-size: 11px; margin-top: 4px; font-family: ui-monospace, monospace; }
+  .switch { position: relative; width: 44px; height: 24px; flex: none; margin-top: 2px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 12px; background: var(--border); cursor: pointer; transition: background .15s; }
+  .switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: var(--text); transition: transform .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(20px); background: var(--on-accent); }
+  .switch input:disabled + span { opacity: .4; cursor: not-allowed; }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
 <header>
-  <div>
-    <h1>PC Remote · Panel</h1>
-    <div class="sub" id="header-sub">Cargando…</div>
+  <div class="brand">
+    <!-- assets/brand/mark.svg -->
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 9V7.5A3.5 3.5 0 0 0 11.5 4H6.5A3.5 3.5 0 0 0 3 7.5V16.5A3.5 3.5 0 0 0 6.5 20H11.5A3.5 3.5 0 0 0 15 16.5V15" stroke="var(--mark-line)" stroke-width="2" stroke-linecap="round" fill="none"/>
+      <circle cx="9" cy="12" r="2.5" fill="var(--accent)"/>
+      <path d="M11.5 12H18" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="20" cy="12" r="2.25" fill="var(--accent)"/>
+    </svg>
+    <div>
+      <h1>PC Remote</h1>
+      <div class="sub" id="header-sub">Cargando…</div>
+    </div>
   </div>
   <span class="badge" id="status-badge"><span class="dot"></span>ONLINE</span>
 </header>
@@ -129,6 +178,16 @@
       <button class="ghost small" onclick="refreshDevices()">Refrescar</button>
     </div>
     <div id="devices-body"><div class="empty">Cargando…</div></div>
+  </section>
+
+  <!-- Plugins -->
+  <section class="card wide">
+    <div class="flex-between">
+      <h2 style="margin:0">Plugins</h2>
+      <button class="ghost small" onclick="openPluginsFolder()">Carpeta de plugins externos</button>
+    </div>
+    <p class="sub" style="margin-top:0">Lo que el móvil puede hacer en este PC. Solo se activan y desactivan aquí, desde el propio PC.</p>
+    <div id="plugins-body"><div class="empty">Cargando…</div></div>
   </section>
 
   <!-- Conexiones activas -->
@@ -327,6 +386,55 @@ async function refreshLogs() {
   } catch (e) { $("logs-body").textContent = "Error cargando logs"; }
 }
 
+const CATEGORY = { system: "Sistema", control: "Control", tools: "Herramientas", advanced: "Avanzado", other: "Otros" };
+
+async function refreshPlugins() {
+  try {
+    const r = await api("/api/plugins");
+    $("plugins-body").innerHTML = r.plugins.map(p => `
+      <div class="plugin">
+        <div class="info">
+          <div class="name">${esc(p.name)}
+            <span class="badge">${esc(CATEGORY[p.category] ?? p.category)}</span>
+            ${p.builtIn ? "" : '<span class="badge warn"><span class="dot"></span>EXTERNO</span>'}
+            ${p.sensitive ? '<span class="badge danger"><span class="dot"></span>SENSIBLE</span>' : ""}
+            ${p.restartRequired ? '<span class="badge warn"><span class="dot"></span>REINICIA EL AGENTE</span>' : ""}
+          </div>
+          <div class="desc">${esc(p.description)}</div>
+          <div class="meta">${esc(p.id)}${p.version ? " · v" + esc(p.version) : ""}${p.actions.length ? " · " + esc(p.actions.join(", ")) : ""}</div>
+        </div>
+        <label class="switch" title="${p.canDisable ? "" : "Necesario para el protocolo"}">
+          <input type="checkbox" data-id="${esc(p.id)}" data-sensitive="${p.sensitive}" ${p.enabled ? "checked" : ""} ${p.canDisable ? "" : "disabled"}
+                 aria-label="Activar ${esc(p.name)}">
+          <span></span>
+        </label>
+      </div>
+    `).join("");
+    $("plugins-body").dataset.dir = r.directory;
+  } catch (e) { $("plugins-body").innerHTML = '<div class="empty">Error cargando plugins</div>'; }
+}
+
+$("plugins-body").addEventListener("change", async (ev) => {
+  const box = ev.target.closest("input[data-id]");
+  if (!box) return;
+  if (box.checked && box.dataset.sensitive === "true" &&
+      !confirm("Este plugin puede ejecutar código en el PC desde el móvil emparejado. ¿Activarlo?")) {
+    box.checked = false;
+    return;
+  }
+  try {
+    await api(`/api/plugins/${encodeURIComponent(box.dataset.id)}?enabled=${box.checked}`, { method: "POST" });
+  } catch (e) {
+    alert("No se pudo cambiar: " + e.message);
+  }
+  refreshPlugins();
+});
+
+async function openPluginsFolder() {
+  try { await api("/api/plugins/folder", { method: "POST" }); }
+  catch (e) { alert("Copia las DLL en: " + ($("plugins-body").dataset.dir || "%LOCALAPPDATA%\\PcRemote\\plugins")); }
+}
+
 let pairTimer = null;
 async function startPair() {
   $("btn-pair").disabled = true;
@@ -374,7 +482,14 @@ function toggleAutoRefresh() {
 
 // Boot
 refreshStatus();
-refreshDevices();
+refreshDevices().then(async () => {
+  // First run (opened by the agent itself): no device yet, so show the QR right away.
+  try {
+    const list = await api("/api/devices");
+    if (!list.some(d => !d.revoked)) startPair();
+  } catch (e) {}
+});
+refreshPlugins();
 refreshConns();
 refreshLogs();
 refreshAudit();

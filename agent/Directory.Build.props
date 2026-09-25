@@ -12,5 +12,10 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <AnalysisLevel>latest</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Shown by the panel, the tray, ping.ping and systeminfo.info. -->
+    <Version>0.4.0</Version>
+    <Product>PC Remote</Product>
+    <Company>Sack</Company>
+    <Copyright>Sack</Copyright>
   </PropertyGroup>
 </Project>

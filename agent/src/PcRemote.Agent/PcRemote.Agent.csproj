@@ -4,9 +4,11 @@
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>false</UseWPF>
     <RootNamespace>PcRemote.Agent</RootNamespace>
-    <AssemblyName>PcRemote.Agent</AssemblyName>
+    <!-- The exe users double-click: PcRemote.exe. -->
+    <AssemblyName>PcRemote</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,7 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
-    <!-- All modules referenced so their DLLs copy to bin/ next to the exe. -->
+    <!-- Built-in modules. Program.BuiltInModules names each one, so they also
+         work inside the single-file exe. -->
     <ProjectReference Include="..\PcRemote.Modules.System\PcRemote.Modules.System.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.SystemInfo\PcRemote.Modules.SystemInfo.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
@@ -27,9 +30,13 @@
     <ProjectReference Include="..\PcRemote.Modules.Processes\PcRemote.Modules.Processes.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Windows\PcRemote.Modules.Windows.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Media\PcRemote.Modules.Media.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Terminal\PcRemote.Modules.Terminal.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Files\PcRemote.Modules.Files.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Network\PcRemote.Modules.Network.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Tray icon (the exe icon comes from ApplicationIcon). -->
+    <EmbeddedResource Include="app.ico" LogicalName="PcRemote.Agent.app.ico" />
   </ItemGroup>
 </Project>
