@@ -33,6 +33,9 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             val settings by graph.settings.settings.collectAsStateWithLifecycle()
+            // With the lock off there is nothing to unlock: turning it on later must not
+            // lock the app on the spot, only from the next launch / return.
+            LaunchedEffect(settings.biometricLock) { if (!settings.biometricLock) locked = false }
             val dark = when (settings.theme) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.DARK -> true
