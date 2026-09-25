@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
 using PcRemote.Core.Panel;
@@ -61,6 +62,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     private readonly DeviceAdmin       _deviceAdmin;
     private readonly CommandRouter     _router;
     private readonly PcRemote.Core.Storage.CommandAuditLog _audit;
+    private readonly ActivityLog _activity;
+    private readonly IServiceProvider _services;
     private readonly ILogger<WebSocketServer> _logger;
 
     private WebApplication? _app;
@@ -81,6 +84,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         DeviceAdmin deviceAdmin,
         CommandRouter router,
         PcRemote.Core.Storage.CommandAuditLog audit,
+        ActivityLog activity,
+        IServiceProvider services,
         ILogger<WebSocketServer> logger)
     {
         _settings    = settings;
@@ -92,6 +97,8 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _deviceAdmin = deviceAdmin;
         _router      = router;
         _audit       = audit;
+        _activity    = activity;
+        _services    = services;
         _logger      = logger;
     }
 
@@ -134,6 +141,11 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_devices);
         builder.Services.AddSingleton(_deviceAdmin);
         builder.Services.AddSingleton(_audit);
+        // Plugins section of the panel.
+        builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.FeatureStore>());
+        builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginCatalog>());
+        builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginsModule>());
+        builder.Services.AddSingleton(_activity);
 
         _app = builder.Build();
 
@@ -244,6 +256,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
                     catch (Exception ex) { _logger.LogWarning(ex, "{Module} failed to clean up a session", aware.GetType().Name); }
                 }
                 _logger.LogInformation("Session {Session} ended", Short(conn.Session.SessionId));
+                _activity.Add("connection", $"{conn.Session.DeviceName} se desconectó", conn.ClientIp);
             }
             _connections.Unregister(tracked.Id);
         }
@@ -424,6 +437,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _devices.Insert(device);
 
         _logger.LogInformation("Paired new device: {Name} ({Id}) from {Ip}", device.Name, device.Id, conn.ClientIp);
+        _activity.Add("connection", $"Nuevo dispositivo emparejado: {device.Name}", conn.ClientIp, "success");
 
         await SendAsync(conn, new PairResultMessage(
             Kind:            MessageKinds.PairResult,
@@ -517,6 +531,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _devices.TouchLastSeen(device.Id);
         _logger.LogInformation("Authenticated {Name} from {Ip} → session {Sess}",
             device.Name, conn.ClientIp, Short(session.SessionId));
+        _activity.Add("connection", $"{device.Name} se conectó", conn.ClientIp, "success");
 
         await SendAsync(conn, new AuthResultMessage(
             Kind:      MessageKinds.AuthResult,
@@ -638,6 +653,13 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         {
             await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand,
                 $"Action '{req.Domain}.{req.Action}' is not streamable."), outerCt);
+            return;
+        }
+
+        if (!_router.IsEnabled(module))
+        {
+            await SendAsync(conn, CommandResponse.Fail(req.Id, ErrorCodes.FeatureDisabled,
+                CommandRouter.DisabledMessage(module)), outerCt);
             return;
         }
 

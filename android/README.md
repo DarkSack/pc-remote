@@ -15,34 +15,41 @@ con la New Architecture.
 
 `compileSdk` 37, `targetSdk` 36, `minSdk` 26 (Android 8.0).
 
-## Estado
+## Estado (0.4.0)
 
-- ✅ Descubrimiento: PCs emparejados + escaneo mDNS (varios PCs a la vez)
-- ✅ Emparejamiento por **QR** del panel (certificado fijado desde el inicio) o
-  con código de 6 dígitos (comprueba que la huella declarada coincide con la
-  de la conexión)
-- ✅ Dashboard: CPU/RAM en tiempo real, info del sistema, energía
-- ✅ **Touchpad**: arrastrar = mover, toque = clic, 2 dedos = clic derecho y
-  scroll, mantener = arrastrar; sensibilidad ajustable
-- ✅ **Teclado**: escribir texto, teclas especiales, atajos y F1–F12
-- ✅ **Multimedia**: lo que suena (con carátula), play/pausa/pistas, volumen
-- ✅ **Apps**: abrir cualquier app del PC con un toque. La lista se actualiza
-  sola al instalar o desinstalar, con los iconos reales, búsqueda, favoritas
-  (estrella) y recientes, guardadas por PC
-- ✅ **Portapapeles** en los dos sentidos
-- ✅ **Wake-on-LAN**: botón de encendido en la lista (aparece tras la primera
-  conexión, cuando la app ya conoce la MAC del PC)
-- ✅ Reconexión con backoff; no reintenta si el PC revocó el dispositivo o
-  cambió de certificado (botón "Reintentar"). Si vuelve la red (Wi-Fi), reintenta
-  al momento en vez de esperar al backoff
-- ✅ La conexión sigue a la app: con la app en segundo plano se mantiene 30 s
-  (para volver rápido) y luego se cierra; al volver se reconecta sola
-- ✅ Tras emparejar se abre directamente ese PC
-- ✅ Si el PC cambia de IP, la app lo reconoce por mDNS (huella del
-  certificado) y actualiza la dirección guardada
-- ✅ Volver a emparejar un PC sustituye la entrada anterior en vez de duplicarla
-- ⚠️ Todo lo anterior compila y la lógica pura tiene tests, pero **no se ha
-  probado aún en un móvil real**
+Diseño «Personal Command Center»: Material 3 con tema centralizado
+(`ui/theme`), oscuro por defecto con claro real y colores dinámicos opcionales.
+Barra inferior en teléfonos y *navigation rail* en tablets.
+
+| Pestaña | Qué hay |
+|---|---|
+| **Inicio** | Estado del PC (en línea, latencia, tiempo conectado, IP, última sincronización), acciones rápidas (bloquear, suspender, reiniciar, apagar con confirmación; silenciar), CPU/RAM/GPU/disco con gráficas, red, y accesos a las herramientas |
+| **Control** | Touchpad, teclado y multimedia (carátula, controles, volumen) |
+| **Apps** | Rejilla con iconos reales, cuáles están abiertas, favoritas y recientes; abrir, traer al frente, cerrar |
+| **Actividad** | Línea de tiempo del PC agrupada por día, con filtros |
+| **Ajustes** | Conexión, tema, confirmaciones, vibración, alertas, bloqueo con huella/PIN, olvidar el PC, licencias |
+
+Herramientas: **Monitor** (10 min de historial de CPU, RAM, GPU y red; discos,
+temperaturas, VRAM), **Procesos** (agrupados, orden, búsqueda, finalizar),
+**Red** (interfaces, conexiones, ping desde el PC), **Terminal** (PowerShell,
+historial, copiar), **Archivos** (explorar, abrir en el PC, subir y bajar),
+**Portapapeles** (todo el historial del PC con imágenes; enviar texto o una foto
+al PC) y **Plugins** (ejecutar las acciones de los plugins activados en el PC).
+
+Conexión:
+
+- Al volver a la app comprueba que el socket siga vivo (ping) y, si no,
+  reconecta **al momento**, sin esperar el backoff. Un latido cada 5 s detecta
+  conexiones medio abiertas (Wi-Fi que se durmió, PC suspendido).
+- Tras dos fallos busca el PC por mDNS (por la huella del certificado) y, si
+  cambió de IP, se mueve solo a la nueva.
+- Errores legibles («El PC no respondió — ¿está encendido y con PC Remote
+  abierto?») con el detalle técnico tras «Ver detalles».
+- No reintenta si el PC revocó el móvil o cambió de certificado.
+- Con la app en segundo plano la conexión dura 30 s y luego se cierra.
+
+⚠️ Compila y los tests de lógica pasan, pero **no se ha probado aún en un móvil
+real**.
 
 El escáner de QR lo proporciona Google Play services (sin permiso de cámara
 en la app). En móviles sin Play services, empareja con el código.
@@ -102,26 +109,19 @@ adb logcat | Select-String "PcRemote|AgentClient|CredentialsStore|AndroidRuntime
 ## Estructura
 
 ```
-android/
-├── build.gradle.kts, settings.gradle.kts, gradle.properties
-└── app/
-    ├── build.gradle.kts, proguard-rules.pro
-    └── src/main/
-        ├── AndroidManifest.xml
-        ├── res/values/{strings,themes}.xml
-        └── java/com/sack/pcremote/
-            ├── MainActivity.kt
-            ├── net/
-            │   ├── Protocol.kt       # tipos del protocolo WSS
-            │   ├── Crypto.kt         # Ed25519 vía BouncyCastle
-            │   ├── Discovery.kt      # NsdManager mDNS
-            │   ├── AgentClient.kt    # WSS + pinning + streams; PairingClient
-            │   ├── QrPayload.kt      # QR del panel
-            │   └── WakeOnLan.kt      # magic packet
-            ├── data/CredentialsStore.kt  # AES-GCM con Android Keystore
-            └── ui/
-                ├── PcRemoteApp.kt    # NavHost
-                ├── theme/Theme.kt
-                ├── screens/{Discovery,Pair,Dashboard}Screen.kt
-                └── remote/           # Touchpad, Keyboard, Media, Apps, Clipboard (paneles del dashboard)
+app/src/main/java/com/sack/pcremote/
+├── MainActivity.kt, PcRemoteApplication.kt
+├── data/        # CredentialsStore (Keystore), AppSettings, AppPrefs (favoritas)
+├── net/         # Protocol, AgentClient (WSS + pinning + latido), AgentError, Discovery, Crypto, QrPayload, WakeOnLan
+├── session/     # PcSession (ViewModel por PC), TerminalSession
+└── ui/
+    ├── theme/       # Color.kt (paletas + colores extendidos), Theme.kt
+    ├── components/  # PcStatusCard, SystemMetricCard, NetworkStatusCard, QuickActionButton,
+    │                # SectionHeader, EmptyState, ErrorState, Skeleton, Sparkline/HistoryChart…
+    ├── screens/     # Dispositivos, Emparejar, Bloqueo
+    ├── pc/          # PcScaffold (navegación) + una pantalla por archivo
+    └── remote/      # Touchpad, Teclado, Multimedia
 ```
+
+Icono: `res/drawable/ic_launcher_*.xml` (adaptativo, con versión monocroma para
+los iconos temáticos de Android 13+). El logo original está en `branding/`.

@@ -21,7 +21,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sack.pcremote.net.AgentClient
-import com.sack.pcremote.ui.theme.*
+import com.sack.pcremote.ui.components.rememberHaptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.buildJsonObject
@@ -61,6 +61,7 @@ fun TouchpadPanel(client: AgentClient) {
     var sensitivity by rememberSaveable { mutableFloatStateOf(1.6f) }
     val acc = remember { PointerAccumulator() }
     val haptics = LocalHapticFeedback.current
+    val appHaptics = rememberHaptics()
     val touchSlop = LocalViewConfiguration.current.touchSlop
 
     // Pending movement goes out before any button event. Otherwise a click or the
@@ -104,8 +105,8 @@ fun TouchpadPanel(client: AgentClient) {
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .background(CardDark, RoundedCornerShape(16.dp))
-                .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.large)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large)
                 .pointerInput(sensitivity) {
                     awaitEachGesture {
                         val first = awaitFirstDown(requireUnconsumed = false)
@@ -124,7 +125,7 @@ fun TouchpadPanel(client: AgentClient) {
                                     withTimeout(maxOf(1L, remaining)) { awaitPointerEvent() }
                                 } catch (_: PointerEventTimeoutCancellationException) {
                                     dragging = true
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    appHaptics.longPress()
                                     client.send("input", "mouseDown", buildJsonObject { put("button", "left") })
                                     continue
                                 }
@@ -175,37 +176,36 @@ fun TouchpadPanel(client: AgentClient) {
         ) {
             Text(
                 "Arrastra para mover · toca para clic\n2 dedos: clic derecho y scroll · mantén pulsado para arrastrar",
-                color = MutedDark, fontSize = 12.sp, lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.padding(24.dp),
             )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            MouseButton("Izquierdo", Modifier.weight(2f)) { click("left") }
-            MouseButton("Medio", Modifier.weight(1f)) { click("middle") }
-            MouseButton("Derecho", Modifier.weight(2f)) { click("right") }
+            MouseButton("Clic izquierdo", Modifier.weight(2f)) { appHaptics.tick(); click("left") }
+            MouseButton("Medio", Modifier.weight(1f)) { appHaptics.tick(); click("middle") }
+            MouseButton("Clic derecho", Modifier.weight(2f)) { appHaptics.tick(); click("right") }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sensibilidad", color = DimDark, fontSize = 12.sp, modifier = Modifier.width(90.dp))
+            Text("Sensibilidad", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(96.dp))
             Slider(
                 value = sensitivity,
                 onValueChange = { sensitivity = it },
                 valueRange = 0.5f..4f,
                 modifier = Modifier.weight(1f),
             )
-            Text("${(sensitivity * 10).roundToInt() / 10f}×", color = DimDark, fontSize = 12.sp, modifier = Modifier.width(40.dp))
+            Text("${(sensitivity * 10).roundToInt() / 10f}×", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(40.dp))
         }
     }
 }
 
 @Composable
 private fun MouseButton(label: String, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedButton(
+    FilledTonalButton(
         onClick = onClick,
-        modifier = modifier.height(56.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.outlinedButtonColors(containerColor = CardDark, contentColor = TextDark),
-    ) { Text(label, fontSize = 13.sp) }
+        modifier = modifier.height(64.dp),
+        shape = MaterialTheme.shapes.medium,
+    ) { Text(label, maxLines = 1) }
 }

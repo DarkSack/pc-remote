@@ -42,7 +42,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon = new NotifyIcon
         {
-            Icon    = SystemIcons.Information,
+            Icon    = LoadIcon(),
             Visible = true,
             Text    = "PC Remote — starting…",
         };
@@ -119,6 +119,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var manageDevices = new ToolStripMenuItem("Manage devices…");
         manageDevices.Click += (_, _) => ShowDevicesDialog(devices);
         menu.Items.Add(manageDevices);
+
+        var plugins = new ToolStripMenuItem("Open plugins folder");
+        plugins.Click += (_, _) =>
+        {
+            var path = settings.Storage.ResolvedPluginsPath;
+            Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
+        };
+        menu.Items.Add(plugins);
+
+        var autostart = new ToolStripMenuItem("Start with Windows") { Checked = Autostart.IsEnabled(), CheckOnClick = true };
+        autostart.CheckedChanged += (_, _) =>
+        {
+            try { Autostart.Set(autostart.Checked); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not change it: {ex.Message}", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                autostart.Checked = Autostart.IsEnabled();
+            }
+        };
+        menu.Items.Add(autostart);
 
         var openLogs = new ToolStripMenuItem("Open logs folder");
         openLogs.Click += (_, _) =>
@@ -204,6 +225,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private void Post(Action a) => _uiCtx.Post(_ => a(), null);
+
+    /// <summary>The brand icon embedded in the exe, at the tray's size (16 px at 100 %, more with DPI scaling).</summary>
+    private static Icon LoadIcon()
+    {
+        using var stream = typeof(TrayApplicationContext).Assembly.GetManifestResourceStream("PcRemote.Agent.pcremote.ico");
+        return stream is null ? SystemIcons.Application : new Icon(stream, SystemInformation.SmallIconSize);
+    }
 
     // Same pick as the panel's QR, so the tray never advertises a WSL/Hyper-V address.
     private static string GetPrimaryIp() => PcRemote.Core.Discovery.LanAddress.Guess();

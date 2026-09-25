@@ -1,6 +1,6 @@
 # PC Remote
 
-Controla tu PC Windows desde un teléfono Android en la misma red local: energía, estadísticas en vivo, ratón, teclado, portapapeles, apps, procesos, ventanas y multimedia.
+Controla tu PC Windows desde un teléfono Android en la misma red local: energía, monitor de hardware (CPU, RAM, GPU, discos, red), ratón, teclado, multimedia, apps, procesos, historial del portapapeles (con imágenes), archivos, terminal, actividad y **plugins**.
 
 Monorepo con dos partes:
 
@@ -17,8 +17,8 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 
 | Parte | Hecho | Pendiente |
 |---|---|---|
-| Agente | Los 9 módulos (`system`, `systeminfo`, `input`, `clipboard`, `media`, `windows`, `processes`, `applications`, `ping`), emparejamiento, revocación, panel web con QR y registro de auditoría | Eventos push, notificaciones de Windows |
-| Android | Descubrimiento, emparejamiento por código o QR, dashboard, energía, touchpad, teclado, multimedia, apps, portapapeles, Wake-on-LAN | Probarlo en un móvil real; ventanas y procesos |
+| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Notificaciones de Windows |
+| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN | Probarlo en un móvil real |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -29,6 +29,7 @@ Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — componentes, modelo de concurrencia, capas de seguridad.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — protocolo WebSocket y **todos los comandos con sus parámetros reales**.
 - [`docs/PAIRING.md`](docs/PAIRING.md) — emparejamiento, autenticación, revocación y límites.
+- [`docs/PLUGINS.md`](docs/PLUGINS.md) — funciones opcionales y cómo escribir plugins.
 - [`docs/APIS.md`](docs/APIS.md) — APIs de Windows que usa cada módulo.
 - [`docs/MVP.md`](docs/MVP.md) — alcance y criterios de aceptación del MVP.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — fases.
@@ -40,22 +41,27 @@ Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ```
 pc-remote/
+├── branding/                             # logo (SVG) y render.cs → .ico y PNG
 ├── docs/
 ├── agent/                                # .NET 10
+│   ├── publish.ps1                       # → dist\PcRemote.exe (un solo ejecutable)
 │   ├── PcRemote.Agent.slnx
 │   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
 │   ├── global.json
 │   ├── src/
 │   │   ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
-│   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite
+│   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite, plugins, actividad
 │   │   ├── PcRemote.Modules.System/      # apagar, reiniciar, suspender, hibernar, bloquear, cerrar sesión (+ ping)
-│   │   ├── PcRemote.Modules.SystemInfo/  # info estática + stream de CPU/RAM
+│   │   ├── PcRemote.Modules.SystemInfo/  # info + stream de CPU/RAM/GPU/discos/red, alertas
 │   │   ├── PcRemote.Modules.Input/       # ratón y teclado (SendInput)
-│   │   ├── PcRemote.Modules.Clipboard/   # leer, escribir, vigilar
+│   │   ├── PcRemote.Modules.Clipboard/   # leer, escribir, vigilar, historial (texto, imágenes, archivos)
 │   │   ├── PcRemote.Modules.Applications/# "Todas las apps" del menú Inicio (Store y Steam incluidos) + registro; iconos; lanzar
 │   │   ├── PcRemote.Modules.Processes/   # listar y matar
 │   │   ├── PcRemote.Modules.Windows/     # listar, enfocar, minimizar, maximizar, cerrar
-│   │   └── PcRemote.Modules.Media/       # SMTC + volumen
+│   │   ├── PcRemote.Modules.Media/       # SMTC + volumen
+│   │   ├── PcRemote.Modules.Network/     # interfaces, conexiones, ping
+│   │   ├── PcRemote.Modules.Files/       # explorar, abrir, subir y bajar (opcional)
+│   │   └── PcRemote.Modules.Terminal/    # PowerShell (opcional, apagada por defecto)
 │   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
 ├── android/                              # Kotlin + Compose
 └── mobile/                               # DEPRECADO (React Native)
@@ -67,7 +73,19 @@ pc-remote/
 
 ### Agente
 
-Necesita el **SDK de .NET 10** y Windows 10 2004 o posterior.
+**Para usarlo:** un solo ejecutable, sin instalar nada (ni .NET). Genéralo con
+
+```bash
+powershell -ExecutionPolicy Bypass -File agent/publish.ps1
+```
+
+y copia `dist\PcRemote.exe` (~70 MB) a donde quieras. Doble clic y aparece en la
+bandeja; la primera vez se abre el panel con el QR para emparejar. Abrirlo otra
+vez con el agente ya en marcha solo abre el panel. «Iniciar con Windows» está en
+el menú de la bandeja. Si quieres cambiar la configuración, pon un
+`appsettings.json` junto al exe o en `%LOCALAPPDATA%\PcRemote\`.
+
+**Para desarrollar** (SDK de .NET 10, Windows 10 2004 o posterior):
 
 ```bash
 cd agent
@@ -76,7 +94,9 @@ dotnet run --project src/PcRemote.Agent
 
 Aparece un icono en la bandeja. Desde él puedes abrir el **panel web** (`http://localhost:47810/`), que muestra el estado, genera el código de emparejamiento con su QR y permite revocar dispositivos.
 
-Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI) y `logs/`.
+Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI), `features.json` (funciones y plugins activados), `plugins/` y `logs/`.
+
+La **terminal** viene apagada y los **plugins** nuevos también: se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
 
 Puertos por defecto (en `appsettings.json`):
 

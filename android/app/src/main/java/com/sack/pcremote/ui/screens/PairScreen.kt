@@ -1,25 +1,35 @@
 package com.sack.pcremote.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sack.pcremote.data.CredentialsStore
+import com.sack.pcremote.net.AgentError
 import com.sack.pcremote.net.PairPhase
 import com.sack.pcremote.net.PairingClient
-import com.sack.pcremote.ui.theme.*
+import com.sack.pcremote.ui.components.ErrorState
+import com.sack.pcremote.ui.components.IconTile
+import com.sack.pcremote.ui.components.rememberHaptics
+import com.sack.pcremote.ui.theme.MonoStyle
+import com.sack.pcremote.ui.theme.extendedColors
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PairScreen(
     host: String, port: Int, agentName: String,
@@ -37,82 +47,91 @@ fun PairScreen(
     var code  by remember { mutableStateOf(qrCode ?: "") }
     var deviceName by remember { mutableStateOf(android.os.Build.MODEL ?: "Android") }
     val client = remember { PairingClient(host, port, agentName, if (fromQr) qrFingerprint else null) }
+    val haptics = rememberHaptics()
 
     LaunchedEffect(Unit) {
         client.start { p, i ->
             phase = p
             if (i != null) info = i
-            if (p == PairPhase.DONE) {
-                client.lastResult?.let { store.savePairing(it) }
-            }
+            if (p == PairPhase.DONE) client.lastResult?.let { store.savePairing(it) }
         }
     }
     DisposableEffect(Unit) { onDispose { client.cancel() } }
     LaunchedEffect(phase) {
-        val id = client.lastResult?.deviceId
-        if (phase == PairPhase.DONE && id != null) { kotlinx.coroutines.delay(700); onPaired(id) }
+        when (phase) {
+            PairPhase.DONE -> {
+                haptics.confirm()
+                val id = client.lastResult?.deviceId ?: return@LaunchedEffect
+                kotlinx.coroutines.delay(700)
+                onPaired(id)
+            }
+            PairPhase.ERROR -> haptics.reject()
+            else -> {}
+        }
     }
 
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("Emparejando con", color = DimDark, fontSize = 13.sp)
-        Text(agentName, color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-        Text("$host:$port", color = DimDark, fontSize = 13.sp)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Emparejar") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás") } },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Text(agentName, style = MaterialTheme.typography.headlineSmall)
+            Text("$host:$port", style = MonoStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(24.dp))
 
-        Spacer(Modifier.height(32.dp))
-        when (phase) {
-            PairPhase.CONNECTING -> Centered { CircularProgressIndicator(color = Accent); Spacer(Modifier.height(12.dp)); Text("Conectando al agente…", color = TextDark) }
-            PairPhase.WAITING_CODE -> {
-                Text(
-                    if (fromQr) "Código leído del QR. Revisa el nombre y confirma:"
-                    else "Mira la notificación en el PC. Introduce el código de 6 dígitos:",
-                    color = DimDark, fontSize = 14.sp,
-                )
-                info?.let { Text(it, color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    textStyle = TextStyle(color = TextDark, fontSize = 32.sp, letterSpacing = 8.sp, textAlign = TextAlign.Center),
-                    singleLine = true,
-                    placeholder = { Text("000000", color = MutedDark, fontSize = 32.sp) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardDark, unfocusedContainerColor = CardDark,
-                        focusedBorderColor = Accent, unfocusedBorderColor = BorderDark,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("Nombre visible en el PC:", color = DimDark, fontSize = 12.sp)
-                OutlinedTextField(
-                    value = deviceName,
-                    onValueChange = { deviceName = it.take(32) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardDark, unfocusedContainerColor = CardDark,
-                        focusedBorderColor = Accent, unfocusedBorderColor = BorderDark,
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                )
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    enabled = code.length == 6 && deviceName.isNotBlank(),
-                    onClick = { client.submitCode(code, deviceName.trim()) },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentDim),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Confirmar", color = TextDark, fontWeight = FontWeight.Bold) }
-            }
-            PairPhase.CONFIRMING -> Centered { CircularProgressIndicator(color = Accent); Spacer(Modifier.height(12.dp)); Text("Verificando código…", color = TextDark) }
-            PairPhase.DONE -> Centered {
-                Text("✓ Emparejado", color = Success, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Abriendo el PC…", color = DimDark, fontSize = 13.sp)
-            }
-            PairPhase.ERROR -> Centered {
-                Text("Error de emparejamiento", color = Danger, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(info ?: "Sin detalles", color = DimDark, fontSize = 13.sp)
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = CardDark)) {
-                    Text("Volver", color = TextDark)
+            AnimatedContent(phase, label = "phase") { p ->
+                when (p) {
+                    PairPhase.CONNECTING -> Waiting("Conectando con el PC…")
+                    PairPhase.CONFIRMING -> Waiting("Comprobando el código…")
+                    PairPhase.WAITING_CODE -> Column {
+                        Text(
+                            if (fromQr) "Código leído del QR. Revisa el nombre con el que aparecerá este móvil y confirma."
+                            else "Introduce el código de 6 dígitos que muestra el PC.",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        info?.let { Text(it, color = MaterialTheme.extendedColors.warning, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = code,
+                            onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                            label = { Text("Código") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 30.sp, letterSpacing = 8.sp, textAlign = TextAlign.Center),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = deviceName,
+                            onValueChange = { deviceName = it.take(32) },
+                            label = { Text("Nombre de este móvil en el PC") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            enabled = code.length == 6 && deviceName.isNotBlank(),
+                            onClick = { haptics.tick(); client.submitCode(code, deviceName.trim()) },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text("Emparejar") }
+                    }
+                    PairPhase.DONE -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconTile(Icons.Outlined.CheckCircle, size = 72.dp,
+                            container = MaterialTheme.extendedColors.successContainer, content = MaterialTheme.extendedColors.onSuccessContainer)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Emparejado", style = MaterialTheme.typography.titleLarge)
+                        Text("Abriendo el PC…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    PairPhase.ERROR -> ErrorState(
+                        AgentError("No se pudo emparejar", info ?: "Sin detalles."),
+                        icon = Icons.Outlined.LinkOff,
+                        onRetry = onBack,
+                        retryLabel = "Volver",
+                    )
                 }
             }
         }
@@ -120,6 +139,10 @@ fun PairScreen(
 }
 
 @Composable
-private fun Centered(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally, content = content)
+private fun Waiting(text: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator()
+        Spacer(Modifier.height(16.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
 }

@@ -1,21 +1,19 @@
 package com.sack.pcremote.net
 
-import android.util.Base64
 import android.util.Log
 import com.sack.pcremote.data.AgentCredentials
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import okhttp3.*
-import okio.ByteString
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -28,14 +26,19 @@ import javax.net.ssl.X509TrustManager
 // no coincide → esto es el "cert pinning" real.
 //
 // Auth: al abrir, el server emite `auth_challenge` con un nonce.
-// Firmamos con Ed25519 y respondemos con `auth`. Server valida
-// contra la public key del device en su SQLite.
+// Firmamos con Ed25519 y respondemos con `auth`.
 //
-// API pública:
-//   connect() / disconnect()
-//   state: StateFlow<ConnectionState>
-//   request(domain, action, params?) → Response suspendible
-//   subscribe(domain, action, params?, onData) → Sub cancelable
+// Reconexión (lo que fallaba "al volver"):
+//   - Un socket medio muerto (el móvil durmió, la Wi-Fi cambió, el PC
+//     se suspendió) seguía marcado CONNECTED hasta que el ping de OkHttp
+//     se daba cuenta, 15-30 s después; mientras, todo daba timeout. Ahora
+//     un ping de aplicación cada 5 s sin respuesta en 4 s fuerza la
+//     reconexión, y ensureAlive() lo comprueba al volver a la app.
+//   - Al volver, retryNow() salta la espera del backoff (hasta 30 s).
+//   - updateAddress(): si el PC cambió de IP, la sesión lo busca por mDNS
+//     y reconecta a la nueva dirección.
+//   - Un único OkHttpClient para todas las reconexiones (antes se creaba
+//     uno por intento y se apagaba su dispatcher justo después).
 // ══════════════════════════════════════════════════════════════
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, AUTHENTICATING, CONNECTED, RECONNECTING, FAILED }
@@ -46,62 +49,144 @@ class CertificateMismatchException(message: String) : java.security.cert.Certifi
 private fun sha256Hex(cert: X509Certificate): String =
     Crypto.toHex(java.security.MessageDigest.getInstance("SHA-256").digest(cert.encoded))
 
-class AgentClient(private val creds: AgentCredentials) {
+class AgentClient(initial: AgentCredentials) {
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
-        classDiscriminator = "kind"   // no lo usamos pero por si acaso
     }
+
+    @Volatile private var creds: AgentCredentials = initial
+    val host: String get() = creds.agentHost
 
     private val _state = MutableStateFlow(ConnectionState.DISCONNECTED)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _error = MutableStateFlow<AgentError?>(null)
+    val error: StateFlow<AgentError?> = _error.asStateFlow()
+
+    /** Round trip of the last application ping, in ms. */
+    private val _latency = MutableStateFlow<Long?>(null)
+    val latency: StateFlow<Long?> = _latency.asStateFlow()
+
+    /** When the current session authenticated (epoch ms). */
+    private val _connectedSince = MutableStateFlow<Long?>(null)
+    val connectedSince: StateFlow<Long?> = _connectedSince.asStateFlow()
+
+    /** Consecutive failed attempts since the last successful auth. */
+    private val _failures = MutableStateFlow(0)
+    val failures: StateFlow<Int> = _failures.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val pending = ConcurrentHashMap<String, CompletableDeferred<ResponseMsg>>()
-    private val streams = ConcurrentHashMap<String, (JsonElement) -> Unit>()
+    private val streams = ConcurrentHashMap<String, Stream>()
+
+    private class Stream(val onData: (JsonElement) -> Unit, val onError: ((RequestException) -> Unit)?)
 
     // Every callback checks `webSocket !== ws` and bails out: the listener is
     // shared, and a socket that already died could otherwise fire onFailure after
     // its replacement opened and start a second, parallel reconnect loop.
     @Volatile private var ws: WebSocket? = null
     private var reconnectJob: Job? = null
+    private var heartbeatJob: Job? = null
     private var backoffIndex = 0
-    private val backoff = longArrayOf(1000, 2000, 4000, 8000, 16000, 30000)
+    private val backoff = longArrayOf(1000, 2000, 4000, 8000, 15000, 30000)
 
+    /** Ping sent and not answered yet (monotonic ms), or 0. */
+    @Volatile private var pingSentAt = 0L
+    @Volatile private var pongWaiter: CompletableDeferred<Unit>? = null
+
+    private val http: OkHttpClient by lazy { buildOkHttp { creds.certFingerprintHex } }
+
+    @Synchronized
     fun connect() {
         // Only from a resting state: calling it while connecting, authenticating or
         // waiting to reconnect would open a second socket next to the first.
         if (_state.value != ConnectionState.DISCONNECTED && _state.value != ConnectionState.FAILED) return
         backoffIndex = 0
+        _failures.value = 0
         openSocket(initial = true)
     }
 
-    fun disconnect() {
-        // State first, so the onClosed that follows does not schedule a reconnect.
-        _state.value = ConnectionState.DISCONNECTED
-        reconnectJob?.cancel()
-        reconnectJob = null
-        val old = ws
-        ws = null
-        old?.close(1000, "bye")
-    }
-
     /**
-     * A network just came up (Wi-Fi back, switched networks). If we are waiting out
-     * a backoff delay — up to 30 s — try right away instead. Does nothing in any
-     * other state, so it is safe to call on every network callback.
+     * Try now, whatever we were doing: user pressed "Reintentar", the app came back
+     * to the foreground, or the network just came up. Resets the backoff.
+     * A FAILED state (revoked, other certificate) is retried too: the user asked.
      */
     @Synchronized
-    fun reconnectNow() {
-        if (_state.value != ConnectionState.RECONNECTING || reconnectJob?.isActive != true) return
+    fun retryNow() {
+        when (_state.value) {
+            ConnectionState.CONNECTED, ConnectionState.AUTHENTICATING -> return
+            ConnectionState.CONNECTING -> return
+            else -> {}
+        }
         reconnectJob?.cancel()
         reconnectJob = null
         backoffIndex = 0
-        openSocket(initial = false)
+        dropSocket()
+        openSocket(initial = _state.value == ConnectionState.DISCONNECTED || _state.value == ConnectionState.FAILED)
+    }
+
+    /** Network back (Wi-Fi reconnected): only acts if we are waiting out a backoff delay. */
+    @Synchronized
+    fun reconnectNow() {
+        if (_state.value != ConnectionState.RECONNECTING || reconnectJob?.isActive != true) return
+        retryNow()
+    }
+
+    /**
+     * Back from the background: a socket that looks open may be dead (the phone
+     * slept, the PC suspended). One ping settles it; no pong in 3 s → reconnect.
+     */
+    fun ensureAlive() {
+        when (_state.value) {
+            ConnectionState.CONNECTED -> scope.launch {
+                if (!ping(3000)) {
+                    Log.i(TAG, "No pong after resume; reconnecting")
+                    forceReconnect(AgentError.Unresponsive)
+                }
+            }
+            ConnectionState.RECONNECTING -> retryNow()
+            ConnectionState.DISCONNECTED -> connect()
+            else -> {}
+        }
+    }
+
+    /** The PC was found at another address (DHCP): use it from the next attempt on. */
+    @Synchronized
+    fun updateAddress(host: String, port: Int) {
+        if (host == creds.agentHost && port == creds.agentPort) return
+        creds = creds.copy(agentHost = host, agentPort = port)
+        if (_state.value != ConnectionState.CONNECTED) retryNow()
+    }
+
+    @Synchronized
+    fun disconnect() {
+        // State first, so the onClosed that follows does not schedule a reconnect.
+        _state.value = ConnectionState.DISCONNECTED
+        _connectedSince.value = null
+        reconnectJob?.cancel()
+        reconnectJob = null
+        heartbeatJob?.cancel()
+        dropSocket()
+    }
+
+    /** Disconnect for good: the owner (ViewModel) is going away. */
+    fun close() {
+        disconnect()
+        scope.cancel()
+        runCatching {
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
+    private fun dropSocket() {
+        val old = ws ?: return
+        ws = null
+        // close() only works on an open socket; one still handshaking must be cancelled
+        // or it opens later, unowned, and the agent keeps it until its auth timeout.
+        if (!old.close(1000, "bye")) old.cancel()
     }
 
     /** States from which no automatic reconnect should happen. */
@@ -109,9 +194,11 @@ class AgentClient(private val creds: AgentCredentials) {
         _state.value == ConnectionState.DISCONNECTED || _state.value == ConnectionState.FAILED
 
     /** FAILED is final until the user acts: retrying a revoked device forever helps nobody. */
-    private fun fail(message: String) {
+    private fun fail(error: AgentError) {
         reconnectJob?.cancel()
-        _error.value = message
+        heartbeatJob?.cancel()
+        _error.value = error
+        _connectedSince.value = null
         _state.value = ConnectionState.FAILED
     }
 
@@ -119,14 +206,25 @@ class AgentClient(private val creds: AgentCredentials) {
         _state.value = if (initial) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
 
         // A malformed saved host, or an IPv6 literal without brackets, makes
-        // Request.Builder.url throw. Uncaught, that crashed the app from the UI
-        // thread; now it is a visible, final error.
+        // Request.Builder.url throw. Uncaught, that crashed the app from the UI thread.
         val req = runCatching { Request.Builder().url(agentWsUrl(creds.agentHost, creds.agentPort)).build() }
-            .getOrElse { fail("Dirección del PC no válida: ${creds.agentHost}"); return }
-        val client = buildOkHttp(creds.certFingerprintHex)
+            .getOrElse {
+                fail(AgentError("Dirección no válida", "La dirección guardada (${creds.agentHost}) no es válida.", it.message, permanent = true))
+                return
+            }
+        ws = http.newWebSocket(req, listener)
+    }
 
-        ws = client.newWebSocket(req, listener)
-        client.dispatcher.executorService.shutdown()   // don't keep pool alive
+    @Synchronized
+    private fun forceReconnect(reason: AgentError) {
+        if (_state.value != ConnectionState.CONNECTED) return
+        _error.value = reason
+        _connectedSince.value = null
+        heartbeatJob?.cancel()
+        failAllPending(RuntimeException(reason.title))
+        dropSocket()
+        _failures.value += 1
+        scheduleReconnect(immediate = true)
     }
 
     private val listener = object : WebSocketListener() {
@@ -147,7 +245,7 @@ class AgentClient(private val creds: AgentCredentials) {
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             if (webSocket !== ws) return
-            if (code == CLOSE_REVOKED) fail("Este dispositivo ya no está autorizado en el PC. Vuelve a emparejarlo.")
+            if (code == CLOSE_REVOKED) fail(AgentError.Revoked)
             webSocket.close(1000, null)
         }
 
@@ -156,13 +254,13 @@ class AgentClient(private val creds: AgentCredentials) {
             Log.w(TAG, "WS failure: ${t.message}")
             failAllPending(t)
             if (isTerminal()) return
+            val err = AgentError.from(t)
             // A certificate that does not match the pinned one will not start
             // matching on the next attempt: stop and tell the user.
-            if (generateSequence(t) { it.cause }.any { it is CertificateMismatchException }) {
-                fail("El certificado del PC no coincide con el emparejado. ¿Reinstalaste el agente? Vuelve a emparejar.")
-                return
-            }
-            _error.value = t.message
+            if (err.permanent) { fail(err); return }
+            _error.value = err
+            _connectedSince.value = null
+            _failures.value += 1
             scheduleReconnect()
         }
 
@@ -170,7 +268,12 @@ class AgentClient(private val creds: AgentCredentials) {
             if (webSocket !== ws) return
             Log.i(TAG, "WS closed $code $reason")
             failAllPending(RuntimeException("closed: $reason"))
-            if (!isTerminal()) scheduleReconnect()
+            _connectedSince.value = null
+            if (!isTerminal()) {
+                _error.value = AgentError("Conexión cerrada", "El PC cerró la conexión. Reconectando…", "close $code $reason")
+                _failures.value += 1
+                scheduleReconnect()
+            }
         }
     }
 
@@ -191,35 +294,77 @@ class AgentClient(private val creds: AgentCredentials) {
                 val ok = root["success"]?.jsonPrimitive?.boolean == true
                 if (ok) {
                     backoffIndex = 0
-                    _state.value = ConnectionState.CONNECTED
+                    _failures.value = 0
                     _error.value = null
+                    _connectedSince.value = System.currentTimeMillis()
+                    _state.value = ConnectionState.CONNECTED
+                    startHeartbeat()
                 } else {
-                    fail(root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content ?: "auth failed")
+                    val msg = root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content ?: "auth failed"
+                    fail(if (msg.contains("revoked", ignoreCase = true) || msg.contains("not paired", ignoreCase = true))
+                        AgentError.Revoked.copy(technical = msg) else AgentError.auth(msg))
                     socket.close(1000, "auth")
                 }
             }
             MsgKinds.Response -> {
                 val id = root["id"]?.jsonPrimitive?.content ?: return
                 if (id == "__probe__" || id.startsWith("fire_")) return
-                val res = json.decodeFromJsonElement<ResponseMsg>(root)
+                val res = runCatching { json.decodeFromJsonElement<ResponseMsg>(root) }.getOrNull() ?: return
                 pending.remove(id)?.complete(res)
+                // A subscribe answered with an error (feature disabled, unknown action).
+                if (!res.success && id.startsWith("sub_")) {
+                    streams.remove(id)?.onError?.invoke(RequestException(res.error?.code ?: "ERROR", res.error?.message ?: "Error"))
+                }
             }
             MsgKinds.Stream -> {
                 val id = root["id"]?.jsonPrimitive?.content ?: return
                 val data = root["data"] ?: return
-                streams[id]?.invoke(data)
+                streams[id]?.onData?.invoke(data)
             }
-            MsgKinds.Pong -> {} // TODO: implement ping tracking
+            MsgKinds.Pong -> {
+                val sent = pingSentAt
+                if (sent != 0L) {
+                    _latency.value = System.nanoTime() / 1_000_000 - sent
+                    pingSentAt = 0L
+                }
+                pongWaiter?.complete(Unit)
+            }
         }
     }
 
-    private fun scheduleReconnect() {
+    /** Application-level ping. True if the pong came back within [timeoutMs]. */
+    private suspend fun ping(timeoutMs: Long): Boolean {
+        val socket = ws ?: return false
+        val waiter = CompletableDeferred<Unit>()
+        pongWaiter = waiter
+        pingSentAt = System.nanoTime() / 1_000_000
+        if (!socket.send("""{"kind":"ping","ts":${System.currentTimeMillis()}}""")) return false
+        return withTimeoutOrNull(timeoutMs) { waiter.await() } != null
+    }
+
+    /** Every 5 s: latency for the UI, and the watchdog for half-open sockets. */
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            var misses = 0
+            while (isActive && _state.value == ConnectionState.CONNECTED) {
+                if (ping(4000)) misses = 0
+                else if (++misses >= 2) {
+                    forceReconnect(AgentError.Unresponsive)
+                    return@launch
+                }
+                delay(5000)
+            }
+        }
+    }
+
+    private fun scheduleReconnect(immediate: Boolean = false) {
         reconnectJob?.cancel()
-        val delayMs = backoff[minOf(backoffIndex, backoff.lastIndex)]
+        val delayMs = if (immediate) 0L else backoff[minOf(backoffIndex, backoff.lastIndex)]
         _state.value = ConnectionState.RECONNECTING
         reconnectJob = scope.launch {
             delay(delayMs)
-            // Same lock as reconnectNow: if it cancelled this job while we were waking
+            // Same lock as retryNow: if it cancelled this job while we were waking
             // up, isActive is false here and only its socket gets opened, not two.
             synchronized(this@AgentClient) {
                 if (!isActive || isTerminal()) return@launch
@@ -233,28 +378,37 @@ class AgentClient(private val creds: AgentCredentials) {
         pending.values.forEach { it.completeExceptionally(cause) }
         pending.clear()
         streams.clear()
+        pongWaiter?.cancel()
+        pingSentAt = 0L
     }
 
     // ── Public API ─────────────────────────────────────
 
+    /** Raw response; success=false is returned, not thrown. Throws when not connected or on timeout. */
     suspend fun request(domain: String, action: String, params: JsonElement? = null, timeoutMs: Long = 8000): ResponseMsg {
         check(_state.value == ConnectionState.CONNECTED) { "Not connected" }
         val id = "cmd_${UUID.randomUUID()}"
         val deferred = CompletableDeferred<ResponseMsg>()
         pending[id] = deferred
-        ws?.send(json.encodeToString(RequestMsg(
+        val sent = ws?.send(json.encodeToString(RequestMsg(
             kind = MsgKinds.Request, id = id, domain = domain, action = action, params = params,
-        ))) ?: run { pending.remove(id); throw IllegalStateException("Socket not open") }
+        ))) ?: false
+        if (!sent) { pending.remove(id); throw IllegalStateException("Socket not open") }
 
         return withTimeoutOrNull(timeoutMs) { deferred.await() }
-            ?: run { pending.remove(id); throw RuntimeException("Timeout $domain.$action") }
+            ?: run { pending.remove(id); throw RequestException("TIMEOUT", "Timeout $domain.$action") }
+    }
+
+    /** Like [request] but returns `data`, throwing [RequestException] on success=false. */
+    suspend fun call(domain: String, action: String, params: JsonElement? = null, timeoutMs: Long = 8000): JsonElement? {
+        val res = request(domain, action, params, timeoutMs)
+        if (!res.success) throw RequestException(res.error?.code ?: "ERROR", res.error?.message ?: "Error")
+        return res.data
     }
 
     /**
      * Fire-and-forget request for continuous input (pointer moves, scroll). No
-     * pending entry and no timeout: at 60 moves a second, waiting on each answer
-     * would only add latency and fill `pending`. The response still arrives and is
-     * simply ignored. Returns false when not connected.
+     * pending entry and no timeout. Returns false when not connected.
      */
     fun send(domain: String, action: String, params: JsonElement? = null): Boolean {
         if (_state.value != ConnectionState.CONNECTED) return false
@@ -268,16 +422,16 @@ class AgentClient(private val creds: AgentCredentials) {
 
     fun subscribe(
         domain: String, action: String, params: JsonElement? = null,
+        onError: ((RequestException) -> Unit)? = null,
         onData: (JsonElement) -> Unit,
     ): Subscription {
         val id = "sub_${UUID.randomUUID()}"
-        streams[id] = onData
+        streams[id] = Stream(onData, onError)
         ws?.send(json.encodeToString(SubscribeMsg(
             id = id, domain = domain, action = action, params = params,
         )))
         return Subscription(id) {
-            streams.remove(id)
-            ws?.send(json.encodeToString(UnsubscribeMsg(id = id)))
+            if (streams.remove(id) != null) ws?.send(json.encodeToString(UnsubscribeMsg(id = id)))
         }
     }
 
@@ -285,16 +439,16 @@ class AgentClient(private val creds: AgentCredentials) {
 
     // ── Helpers ─────────────────────────────────────────
 
-    private fun buildOkHttp(pinnedFingerprintHex: String): OkHttpClient {
-        // TrustManager que acepta cualquier cert. La validación real la hace
-        // el interceptor comparando SHA-256 con el fingerprint pinned.
+    private fun buildOkHttp(pinned: () -> String): OkHttpClient {
+        // TrustManager que acepta cualquier cert y compara el SHA-256 con el emparejado.
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
                 val cert = chain.firstOrNull() ?: throw java.security.cert.CertificateException("no cert")
                 val got  = sha256Hex(cert)
-                if (!got.equals(pinnedFingerprintHex, ignoreCase = true)) {
-                    throw CertificateMismatchException("Cert fingerprint mismatch: got=$got expected=$pinnedFingerprintHex")
+                val expected = pinned()
+                if (!got.equals(expected, ignoreCase = true)) {
+                    throw CertificateMismatchException("Cert fingerprint mismatch: got=$got expected=$expected")
                 }
             }
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
@@ -303,7 +457,11 @@ class AgentClient(private val creds: AgentCredentials) {
         return OkHttpClient.Builder()
             .sslSocketFactory(sslCtx.socketFactory, trustAll[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
-            .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(6, TimeUnit.SECONDS)
+            // Our own heartbeat detects dead sockets; OkHttp's ping stays as a backstop.
+            .pingInterval(20, TimeUnit.SECONDS)
+            // Big frames: app icons, clipboard images, file chunks.
+            .readTimeout(0, TimeUnit.MILLISECONDS)
             .build()
     }
 

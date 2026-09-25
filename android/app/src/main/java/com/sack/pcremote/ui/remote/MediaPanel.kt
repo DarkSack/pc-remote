@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.sack.pcremote.net.AgentClient
 import com.sack.pcremote.net.ConnectionState
 import com.sack.pcremote.net.NowPlaying
-import com.sack.pcremote.ui.theme.*
+import com.sack.pcremote.ui.components.rememberHaptics
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -87,31 +87,38 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
         }
     }
 
-    fun action(name: String) = client.send("media", name)
+    val haptics = rememberHaptics()
+    fun action(name: String) { haptics.tick(); client.send("media", name) }
 
     Column(
         Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            Modifier.size(220.dp).clip(RoundedCornerShape(16.dp)).background(CardDark),
-            contentAlignment = Alignment.Center,
+        ElevatedCard(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            val art = artwork
-            if (art != null) Image(art, contentDescription = "Carátula", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            else Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MutedDark, modifier = Modifier.size(72.dp))
-        }
+          Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(
+                Modifier.fillMaxWidth(0.72f).aspectRatio(1f).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) {
+                val art = artwork
+                if (art != null) Image(art, contentDescription = "Carátula", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(72.dp))
+            }
 
         if (now.active) {
-            Text(now.title ?: "Sin título", color = TextDark, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+            Text(now.title ?: "Sin título", style = MaterialTheme.typography.titleLarge,
                  textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(listOfNotNull(now.artist, now.album).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { now.source ?: "" },
-                 color = DimDark, fontSize = 14.sp, textAlign = TextAlign.Center, maxLines = 2)
+                 color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, maxLines = 2)
         } else {
-            Text("No hay nada reproduciéndose", color = DimDark, fontSize = 16.sp)
+            Text("No hay nada reproduciéndose", style = MaterialTheme.typography.titleMedium)
             Text("Spotify, el navegador y la mayoría de reproductores aparecen aquí al darle a play.",
-                 color = MutedDark, fontSize = 12.sp, textAlign = TextAlign.Center)
+                 color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -122,6 +129,8 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
             ) { action("playPause") }
             RoundControl(Icons.Filled.SkipNext, "Siguiente", enabled = now.active) { action("next") }
         }
+          }
+        }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             val muted = now.mute == true
@@ -131,7 +140,7 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
             }) {
                 Icon(if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                      contentDescription = if (muted) "Quitar silencio" else "Silenciar",
-                     tint = if (muted) Danger else Accent)
+                     tint = if (muted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
             }
             Slider(
                 value = dragVolume ?: (now.volume ?: 0).toFloat(),
@@ -149,7 +158,7 @@ fun MediaPanel(client: AgentClient, state: ConnectionState) {
                 enabled = now.volume != null,
                 modifier = Modifier.weight(1f),
             )
-            Text("${(dragVolume ?: (now.volume ?: 0).toFloat()).toInt()}", color = DimDark, fontSize = 12.sp,
+            Text("${(dragVolume ?: (now.volume ?: 0).toFloat()).toInt()}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge,
                  modifier = Modifier.width(32.dp), textAlign = TextAlign.End)
         }
     }
@@ -161,10 +170,8 @@ private fun RoundControl(icon: ImageVector, label: String, enabled: Boolean, big
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = if (big) Accent else CardDark,
-            contentColor = if (big) BgDark else TextDark,
-        ),
+        colors = if (big) IconButtonDefaults.filledIconButtonColors()
+                 else IconButtonDefaults.filledTonalIconButtonColors(),
         modifier = Modifier.size(if (big) 76.dp else 56.dp),
     ) { Icon(icon, contentDescription = label, modifier = Modifier.size(if (big) 40.dp else 28.dp)) }
 }

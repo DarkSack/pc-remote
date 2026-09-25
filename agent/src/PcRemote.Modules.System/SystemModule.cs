@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
 using PcRemote.Modules.System.Win32;
@@ -16,6 +17,16 @@ public sealed class SystemModule : ICommandModule
 {
     public string Domain => "system";
 
+    private static readonly Dictionary<string, string> Labels = new()
+    {
+        ["shutdown"] = "Apagado", ["restart"] = "Reinicio", ["sleep"] = "Suspensión",
+        ["hibernate"] = "Hibernación", ["lock"] = "Bloqueo", ["logoff"] = "Cierre de sesión",
+    };
+
+    private readonly ActivityLog? _activity;
+
+    public SystemModule(ActivityLog activity) => _activity = activity;
+
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("shutdown",  "Shutdown the PC",           IsDestructive: true),
@@ -28,6 +39,9 @@ public sealed class SystemModule : ICommandModule
 
     public Task<CommandResponse> HandleAsync(CommandRequest req, ClientSession session, CancellationToken ct)
     {
+        // Logged before acting: after a shutdown there is no "after".
+        if (Labels.TryGetValue(req.Action, out var label))
+            _activity?.Add("power", $"{label} solicitado", session.DeviceName, req.Action is "shutdown" or "restart" or "logoff" ? "warning" : "info");
         try
         {
             return Task.FromResult(req.Action switch

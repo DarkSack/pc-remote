@@ -22,5 +22,6 @@
     <ProjectReference Include="..\..\src\PcRemote.Modules.Applications\PcRemote.Modules.Applications.csproj" />
     <ProjectReference Include="..\..\src\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
     <ProjectReference Include="..\..\src\PcRemote.Modules.Clipboard\PcRemote.Modules.Clipboard.csproj" />
+    <ProjectReference Include="..\..\src\PcRemote.Modules.Files\PcRemote.Modules.Files.csproj" />
   </ItemGroup>
 </Project>

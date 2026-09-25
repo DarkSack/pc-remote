@@ -72,8 +72,15 @@ public sealed class WindowsModule : ICommandModule
 
             WindowNative.GetWindowThreadProcessId(h, out var pid);
             string procName = "";
+            string? description = null;
             // Disposed: each Process holds a handle, and every list leaked one per window.
-            try { using var proc = Process.GetProcessById((int)pid); procName = proc.ProcessName; } catch { }
+            try
+            {
+                using var proc = Process.GetProcessById((int)pid);
+                procName = proc.ProcessName;
+                description = Describe(proc);
+            }
+            catch { }
 
             WindowNative.GetWindowRect(h, out var r);
             items.Add(new
@@ -82,6 +89,8 @@ public sealed class WindowsModule : ICommandModule
                 title,
                 pid,
                 process   = procName,
+                // "Google Chrome" for chrome.exe: lets the app match windows to its app list.
+                description,
                 foreground = h == foreground,
                 minimized = WindowNative.IsIconic(h),
                 maximized = WindowNative.IsZoomed(h),
@@ -92,6 +101,25 @@ public sealed class WindowsModule : ICommandModule
             return true;
         }, IntPtr.Zero);
         return CommandResponse.Ok(req.Id, new { windows = items });
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> Descriptions = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>FileDescription of the program (cached per path). Null for elevated processes we cannot open.</summary>
+    private static string? Describe(Process proc)
+    {
+        string? path;
+        try { path = proc.MainModule?.FileName; } catch { return null; }
+        if (path is null) return null;
+        return Descriptions.GetOrAdd(path, p =>
+        {
+            try
+            {
+                var info = FileVersionInfo.GetVersionInfo(p);
+                return string.IsNullOrWhiteSpace(info.FileDescription) ? info.ProductName : info.FileDescription.Trim();
+            }
+            catch { return null; }
+        });
     }
 
     /// <summary>

@@ -102,6 +102,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | `INTERNAL_ERROR` | Excepción inesperada en el agente. Ver logs. |
 | `RATE_LIMITED` | Demasiados intentos de emparejamiento o de suscripciones. |
 | `PAIRING_FAILED` | Código incorrecto o caducado. |
+| `FEATURE_DISABLED` | La función opcional o el plugin está desactivado en el panel del PC (ver [PLUGINS.md](PLUGINS.md)). También al suscribirse. |
 
 ---
 
@@ -134,8 +135,8 @@ el cierre de aplicaciones colgadas (`EWX_FORCEIFHUNG`).
 
 | Action | Kind | Params | Data |
 |---|---|---|---|
-| `info` | request | — | `{ macAddress, broadcast, lanIp, hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, ramTotalMB, uptimeSec, timezone }` — `macAddress` (`AA:BB:…`) y `broadcast` son los del adaptador de la LAN, para Wake-on-LAN |
-| `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, ramPct, ramUsedMB, ramTotalMB, ts }` |
+| `info` | request | — | `{ macAddress, broadcast, lanIp, hostname, username, os, osBuild, is64Bit, cpuModel, cpuCores, gpuModel, ramTotalMB, uptimeSec, timezone }` — `macAddress` (`AA:BB:…`) y `broadcast` son los del adaptador de la LAN, para Wake-on-LAN |
+| `stats` | request o subscribe | `{ intervalMs? }` (250–60000, por defecto 1000; solo en subscribe) | `{ cpu, cpuFreqMHz?, cpuTempC?, ramPct, ramUsedMB, ramTotalMB, gpu?: { name, usage, tempC?, vramUsedMB?, vramTotalMB?, clockMHz? }, disks: [{ name, label, totalGB, freeGB, usedPct }], net: { downBps, upBps }, uptimeSec, ts }` — los campos con `?` son `null` si el PC no los expone (temperaturas: sensores ACPI; GPU: contadores de Windows y `nvidia-smi` si existe) |
 
 ### `input`
 
@@ -174,6 +175,20 @@ PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 | `set` | request | `{ text }` (máx. 1 000 000 caracteres; `""` vacía) | `{ length }` |
 | `clear` | request | — | `{ cleared }` |
 | `watch` | subscribe | — | `{ text, length }` al suscribirse y en cada cambio; `text` va recortado a 4096 caracteres |
+| `setImage` | request | `{ data }` — PNG/JPEG/BMP en base64, máx. 3 MB | `{ width, height }` |
+| `historyList` | request | — | `{ enabled, items: [ClipItem] }` |
+| `historyWatch` | subscribe | — | `{ op: "snapshot", enabled, items }` al suscribirse; luego `{ op: "add", item }` (una entrada repetida sube arriba con el mismo id), `{ op: "remove", id }` o `{ op: "clear" }` |
+| `historyGet` | request | `{ id }` | `{ id, kind, text, width, height, png }` — contenido completo (`png` en base64 para imágenes) |
+| `historyRestore` | request | `{ id }` | `{ restored }` — la vuelve a poner en el portapapeles del PC |
+| `historyDelete` | request | `{ id }` | `{ deleted }` |
+| `historyClear` | request | — | `{ cleared }` |
+
+`ClipItem` = `{ id, ts, kind: "text" | "image" | "files", preview, length, width, height, bytes, thumbnail, files }`:
+`preview` son los primeros 280 caracteres, `thumbnail` una miniatura PNG en base64
+(solo imágenes) y `files` los nombres copiados. El historial lo lleva el agente
+(`Clipboard:HistorySize`, 60 por defecto; 0 lo desactiva), vive en memoria y
+respeta lo que las apps marcan como privado (gestores de contraseñas: formatos
+`ExcludeClipboardContentFromMonitorProcessing` / `CanIncludeInClipboardHistory = 0`).
 
 ### `applications`
 
@@ -203,14 +218,17 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 
 | Action | Params | Data | Destructivo |
 |---|---|---|---|
-| `list` | `{ limit?: 1–500 (50), filter? }` — ordenados por memoria | `{ count, processes: [{ pid, name, workingMB, threads, startTime }] }` | — |
-| `kill` | `{ pid }` — mata el árbol entero; rechaza procesos del sistema y el propio agente | `{ killed, name }` | ✅ |
+| `list` | `{ limit?: 1–500 (50), filter?, sort?: "ram" \| "cpu" \| "name", group?: bool }` | `{ count, total, processes: [...] }`. Sin `group`: `{ pid, name, cpu, workingMB, title, isProtected, … }`. Con `group: true` (uno por programa): `{ name, count, pids, cpu, workingMB, title, isProtected }` | — |
+| `watch` | subscribe; mismos parámetros + `intervalMs?` (1000–30000, 2000) | La misma forma que `list`, periódicamente | — |
+| `kill` | `{ pid }` o `{ pids: [...] }` — mata el árbol entero; rechaza procesos del sistema y el propio agente | `{ killed, pids, name, errors }` | ✅ |
+
+`cpu` es el % del total de la máquina desde la muestra anterior.
 
 ### `windows`
 
 | Action | Params | Data |
 |---|---|---|
-| `list` | — | `{ windows: [{ hwnd, title, pid, process, foreground, minimized, maximized, x, y, width, height }] }` (solo visibles y con título; `foreground` = la que tiene el foco) |
+| `list` | — | `{ windows: [{ hwnd, title, pid, process, description, foreground, minimized, maximized, x, y, width, height }] }` (solo visibles y con título; `foreground` = la que tiene el foco) |
 | `focus` | `{ hwnd }` — restaura si está minimizada | `{ ok }` — `ok` dice si la ventana quedó realmente delante. Funciona aunque el agente esté en segundo plano (Windows limita eso; el agente lo sortea) |
 | `minimize` / `maximize` / `restore` | `{ hwnd }` | `{ ok }` |
 | `close` | `{ hwnd }` — envía `WM_CLOSE` sin esperar; la app puede preguntar antes de cerrar | `{ ok }` |
@@ -225,3 +243,59 @@ Dominio aparte para que cargar iconos no retrase un `launch` (cada dominio tiene
 | `volumeGet` | — | `{ volume: 0–100, mute }` |
 | `volumeSet` | `{ volume: 0–100 }` | `{ volume }` |
 | `volumeMute` | `{ mute?: bool }` — sin parámetro alterna | `{ mute }` |
+
+### `network`
+
+| Action | Params | Data |
+|---|---|---|
+| `info` | — | `{ hostname, lanIp, mac, interfaces: [{ name, description, type, up, ipv4, prefixLength, ipv6, mac, speedMbps, gateway, dns, primary }], tcp: { established, listening, timeWait, total }, remote: [{ address, ports, count, local }] }` |
+| `ping` | `{ host? }` — por defecto la puerta de enlace | `{ host, sent, lost, avgMs, minMs, maxMs }` |
+
+### `files`
+
+Función opcional (activada por defecto). Rutas absolutas; se rechazan rutas UNC
+y de dispositivo.
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `roots` | request | — | `{ places: [{ name, icon, path }], drives: [{ name, path, label, type, ready, totalBytes, freeBytes }] }` |
+| `list` | request | `{ path, showHidden? }` | `{ path, name, parent, entries: [{ name, path, dir, size, modified, ext, hidden }], truncated }` — carpetas primero |
+| `open` / `reveal` | request | `{ path }` | `{ opened }` — abrir con la app predeterminada / mostrar en el Explorador |
+| `read` | request | `{ path, offset?, length? (≤ 1 MiB) }` | `{ name, offset, length, total, eof, data }` (base64) — para descargar por trozos |
+| `upload` | request | `{ uploadId, name, offset, data, done, dir? }` | `{ received }`, y con `done: true` también `{ path }` final. Trozos en orden; se escribe como `.part` oculto y se renombra al acabar (sin pisar: `archivo (1).ext`). Por defecto a Descargas. Máx. 2 GB |
+
+### `terminal`
+
+Función opcional, **desactivada por defecto**.
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `info` | request | — | `{ shell, cwd, user, host }` |
+| `exec` | subscribe | `{ command, cwd? }` | Lotes `{ type: "out" \| "err", lines: [...] }` y al final `{ type: "exit", code, cwd, durationMs, truncated, error? }`. `cwd` es la carpeta al terminar (un `cd` se conserva si el cliente la reenvía). Cancelar la suscripción mata el proceso |
+
+Cada comando es un `powershell.exe -NoProfile -NonInteractive` nuevo, sin perfil
+y con el mismo usuario que el agente. Salida máx. ~1 M caracteres por comando.
+
+### `plugins`
+
+| Action | Params | Data |
+|---|---|---|
+| `list` | — | `{ folder, features: [{ id, name, description, icon, enabled }], plugins: [{ id, name, description, icon, version, author, kind: "actions" \| "assembly", enabled, loaded, errors, actions: [{ id, label, description, icon, confirm, output, timeoutSec, params }], domains }] }` |
+| `run` | `{ plugin, action, params? }` | `{ started, exitCode, stdout, stderr, timedOut, truncated }`. `INVALID_PARAMS` si un parámetro no cumple sus reglas; `FEATURE_DISABLED` si el plugin está apagado |
+
+Activar y desactivar **no** está en el protocolo: solo en el panel del PC.
+Formato de `plugin.json` en [PLUGINS.md](PLUGINS.md).
+
+### `activity`
+
+Lo que pasa en el PC: conexiones, encendido, energía, apps abiertas, procesos
+finalizados, alertas de hardware (temperatura ≥ 85 °C, CPU ≥ 95 % un minuto,
+RAM ≥ 92 %, disco < 5 % libre), plugins, terminal, archivos. En memoria (300).
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `list` | request | `{ limit? }` | `{ events: [ActivityEvent] }`, lo más reciente primero |
+| `watch` | subscribe | `{ limit? }` | `{ op: "snapshot", events }` y luego `{ op: "add", event }` |
+
+`ActivityEvent` = `{ id, ts, type, title, detail, severity: "info" | "success" | "warning" | "error" }`,
+con `type` ∈ `connection`, `power`, `agent`, `alert`, `app`, `process`, `plugin`, `terminal`, `files`, `clipboard`.

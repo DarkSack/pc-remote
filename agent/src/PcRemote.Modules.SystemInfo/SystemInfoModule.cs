@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using Microsoft.Win32;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Protocol;
 using PcRemote.Core.Router;
 
@@ -13,8 +14,13 @@ namespace PcRemote.Modules.SystemInfo;
 /// <summary>
 /// System info + realtime stats.
 ///   - "info"  → request/response: static host info.
-///   - "stats" → request/response: single snapshot of cpu%/ram%.
+///   - "stats" → request/response: single snapshot.
 ///   - "stats" → subscribe:       stream of snapshots every params.intervalMs (default 1000).
+/// A snapshot has CPU (%, clock, temperature), RAM, GPU (usage, temperature,
+/// VRAM, clock), fixed disks and network throughput; see HardwareSampler.
+///
+/// It also watches thresholds in the background (every 15 s, with or without a
+/// phone connected) and writes alerts to the activity timeline.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposable
@@ -31,6 +37,23 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
 
     private readonly PerformanceCounter _cpuCounter = new("Processor", "% Processor Time", "_Total");
     private bool _cpuCounterPrimed;
+
+    private readonly HardwareSampler _hw = new();
+    private readonly ActivityLog? _activity;
+    private readonly Timer? _alerts;
+
+    // Several phones (or a stream and a request) share one sample per ~0.8 s.
+    private object? _lastSample;
+    private long _lastSampleAt;
+
+    public SystemInfoModule(ActivityLog activity)
+    {
+        _activity = activity;
+        _alerts = new Timer(_ => CheckAlerts(), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(15));
+    }
+
+    /// <summary>For tests: no background alerts.</summary>
+    internal SystemInfoModule() { }
 
     // PerformanceCounter is not thread-safe, and two phones (or a request next to
     // a stream) sample it from different threads.
@@ -91,7 +114,7 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
     }
 
     // ── info ────────────────────────────────────────────
-    private static CommandResponse GetInfo(string id)
+    private CommandResponse GetInfo(string id)
     {
         var mem = GetMemoryStatus();
         var lan = PcRemote.Core.Discovery.LanAddress.GuessInterface();
@@ -109,6 +132,7 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
             is64Bit    = Environment.Is64BitOperatingSystem,
             cpuModel   = GetCpuModel(),
             cpuCores   = Environment.ProcessorCount,
+            gpuModel   = _hw.Gpu()?.Name,
             ramTotalMB = mem?.totalMB ?? 0,
             uptimeSec  = Environment.TickCount64 / 1000,
             timezone   = TimeZoneInfo.Local.Id,
@@ -117,6 +141,21 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
 
     // ── stats snapshot (shared by request/response and stream) ──
     private object SampleStats()
+    {
+        lock (_cpuLock)
+        {
+            if (_lastSample is not null && Environment.TickCount64 - _lastSampleAt < 800) return _lastSample;
+        }
+        var sample = TakeSample();
+        lock (_cpuLock)
+        {
+            _lastSample = sample;
+            _lastSampleAt = Environment.TickCount64;
+        }
+        return sample;
+    }
+
+    private Snapshot TakeSample()
     {
         double cpu;
         lock (_cpuLock)
@@ -130,14 +169,72 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
             cpu = Math.Round(_cpuCounter.NextValue(), 1);
         }
         var mem = GetMemoryStatus();
-        return new
+        return new Snapshot(
+            Cpu: cpu,
+            CpuFreqMHz: _hw.CpuFrequencyMHz(),
+            CpuTempC: _hw.CpuTemperatureC(),
+            RamPct: mem is null ? 0 : Math.Round(mem.Value.usedPct, 1),
+            RamUsedMB: mem?.usedMB ?? 0,
+            RamTotalMB: mem?.totalMB ?? 0,
+            Gpu: _hw.Gpu(),
+            Disks: _hw.Disks(),
+            Net: _hw.Network(),
+            UptimeSec: Environment.TickCount64 / 1000,
+            Ts: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    }
+
+    /// <summary>Serialised camelCase: cpu, cpuFreqMHz, cpuTempC, ramPct, …, gpu{…}, disks[…], net{downBps, upBps}.</summary>
+    public sealed record Snapshot(
+        double Cpu, double? CpuFreqMHz, double? CpuTempC,
+        double RamPct, long RamUsedMB, long RamTotalMB,
+        GpuStats? Gpu, IReadOnlyList<DiskStats> Disks, NetStats Net,
+        long UptimeSec, long Ts);
+
+    // ── alerts ──────────────────────────────────────────
+    private int _cpuHighTicks, _ramHighTicks;
+    private bool _cpuHotRaised, _gpuHotRaised, _cpuBusyRaised, _ramRaised;
+    private readonly Dictionary<string, DateTime> _diskRaised = new();
+
+    /// <summary>With hysteresis: one alert when a value crosses the line, another only after it came back.</summary>
+    private void CheckAlerts()
+    {
+        if (_activity is null) return;
+        try
         {
-            cpu,
-            ramPct     = mem is null ? 0 : Math.Round(mem.Value.usedPct, 1),
-            ramUsedMB  = mem?.usedMB  ?? 0,
-            ramTotalMB = mem?.totalMB ?? 0,
-            ts         = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        };
+            var s = (Snapshot)SampleStats();
+
+            if (s.CpuTempC is { } ct)
+            {
+                if (!_cpuHotRaised && ct >= 85) { _cpuHotRaised = true; _activity.Add("alert", $"Temperatura de CPU alta: {ct:0} °C", null, "warning"); }
+                else if (_cpuHotRaised && ct < 75) _cpuHotRaised = false;
+            }
+            if (s.Gpu?.TempC is { } gt)
+            {
+                if (!_gpuHotRaised && gt >= 85) { _gpuHotRaised = true; _activity.Add("alert", $"Temperatura de GPU alta: {gt:0} °C", s.Gpu.Name, "warning"); }
+                else if (_gpuHotRaised && gt < 75) _gpuHotRaised = false;
+            }
+
+            _cpuHighTicks = s.Cpu >= 95 ? _cpuHighTicks + 1 : 0;
+            if (!_cpuBusyRaised && _cpuHighTicks >= 4) { _cpuBusyRaised = true; _activity.Add("alert", "CPU al máximo durante más de un minuto", $"{s.Cpu:0} %", "warning"); }
+            else if (_cpuBusyRaised && s.Cpu < 70) _cpuBusyRaised = false;
+
+            _ramHighTicks = s.RamPct >= 92 ? _ramHighTicks + 1 : 0;
+            if (!_ramRaised && _ramHighTicks >= 2) { _ramRaised = true; _activity.Add("alert", $"Memoria casi llena: {s.RamPct:0} %", $"{s.RamUsedMB / 1024.0:0.0} de {s.RamTotalMB / 1024.0:0.0} GB", "warning"); }
+            else if (_ramRaised && s.RamPct < 85) _ramRaised = false;
+
+            foreach (var d in s.Disks)
+            {
+                if (d.FreeGB / Math.Max(0.1, d.TotalGB) >= 0.05) continue;
+                // At most once a day per drive: a full disk stays full for a while.
+                if (_diskRaised.TryGetValue(d.Name, out var at) && DateTime.UtcNow - at < TimeSpan.FromDays(1)) continue;
+                _diskRaised[d.Name] = DateTime.UtcNow;
+                _activity.Add("alert", $"Queda poco espacio en {d.Name}", $"{d.FreeGB:0.0} GB libres de {d.TotalGB:0} GB", "warning");
+            }
+        }
+        catch
+        {
+            // Never let a counter hiccup kill the timer.
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────
@@ -192,5 +289,10 @@ public sealed class SystemInfoModule : ICommandModule, IStreamModule, IDisposabl
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
-    public void Dispose() => _cpuCounter.Dispose();
+    public void Dispose()
+    {
+        _alerts?.Dispose();
+        _cpuCounter.Dispose();
+        _hw.Dispose();
+    }
 }

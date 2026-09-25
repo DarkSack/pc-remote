@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome layer for themed icons (Android 13+). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="1.12" android:scaleY="1.12" android:pivotX="54" android:pivotY="54">
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4.5" android:strokeLineCap="round"
+            android:pathData="M62.875,34.968 A21,21 0 0,1 74.92,55.831 M66.045,71.203 A21,21 0 0,1 41.955,71.203 M33.08,55.831 A21,21 0 0,1 45.125,34.968" />
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3" android:strokeLineCap="round"
+            android:pathData="M54,43.5 L54,38 M63.093,59.25 L67.856,62 M44.907,59.25 L40.144,62" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M54,46.5 a7.5,7.5 0 1,0 0.01,0 z M54,28.5 a4.5,4.5 0 1,0 0.01,0 z M72.187,60 a4.5,4.5 0 1,0 0.01,0 z M35.813,60 a4.5,4.5 0 1,0 0.01,0 z" />
+    </group>
+</vector>

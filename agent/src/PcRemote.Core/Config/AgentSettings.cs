@@ -9,6 +9,7 @@ public sealed class AgentSettings
     public PairingSettings   Pairing   { get; init; } = new();
     public SessionSettings   Session   { get; init; } = new();
     public PanelSettings     Panel     { get; init; } = new();
+    public ClipboardSettings Clipboard { get; init; } = new();
 }
 
 public sealed class PanelSettings
@@ -35,8 +36,21 @@ public sealed class StorageSettings
     public string DatabasePath    { get; init; } = @"%LOCALAPPDATA%\PcRemote\agent.db";
     public string CertificatePath { get; init; } = @"%LOCALAPPDATA%\PcRemote\cert.pfx";
 
+    /// <summary>Plugins live in one sub-folder each, with a plugin.json (see docs/PLUGINS.md).</summary>
+    public string PluginsPath     { get; init; } = @"%LOCALAPPDATA%\PcRemote\plugins";
+
     public string ResolvedDatabasePath    => Environment.ExpandEnvironmentVariables(DatabasePath);
     public string ResolvedCertificatePath => Environment.ExpandEnvironmentVariables(CertificatePath);
+    public string ResolvedPluginsPath     => Environment.ExpandEnvironmentVariables(PluginsPath);
+
+    /// <summary>Folder of the database; small state files (features.json) go next to it.</summary>
+    public string DataDirectory => Path.GetDirectoryName(ResolvedDatabasePath)!;
+}
+
+public sealed class ClipboardSettings
+{
+    /// <summary>Entries kept in the PC clipboard history (text and images). 0 turns the history off.</summary>
+    public int HistorySize { get; init; } = 60;
 }
 
 public sealed class PairingSettings

@@ -15,7 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sack.pcremote.net.AgentClient
-import com.sack.pcremote.ui.theme.*
+import com.sack.pcremote.ui.components.rememberHaptics
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -55,9 +55,12 @@ fun KeyboardPanel(client: AgentClient) {
     var text by rememberSaveable { mutableStateOf("") }
     var pressEnter by rememberSaveable { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
+    val haptics = rememberHaptics()
 
-    fun press(keys: String) =
+    fun press(keys: String) {
+        haptics.tick()
         client.send("input", "keyPress", buildJsonObject { put("keys", keys) })
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -69,14 +72,10 @@ fun KeyboardPanel(client: AgentClient) {
             label = { Text("Texto para escribir en el PC") },
             minLines = 3,
             modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = CardDark, unfocusedContainerColor = CardDark,
-                focusedBorderColor = Accent, unfocusedBorderColor = BorderDark,
-            ),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = pressEnter, onCheckedChange = { pressEnter = it })
-            Text("Pulsar Enter al final", color = DimDark, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("Pulsar Enter al final", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Button(
                 enabled = text.isNotEmpty() && !sending,
                 onClick = {
@@ -92,8 +91,7 @@ fun KeyboardPanel(client: AgentClient) {
                             (res.getOrNull()?.error?.message ?: res.exceptionOrNull()?.message), Toast.LENGTH_SHORT).show()
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = BgDark),
-            ) { Text("Escribir", fontWeight = FontWeight.Bold) }
+            ) { Text("Escribir") }
         }
 
         KeyGrid("Teclas", NAV_KEYS, ::press)
@@ -105,7 +103,7 @@ fun KeyboardPanel(client: AgentClient) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KeyGrid(title: String, keys: List<Key>, onKey: (String) -> Unit) {
-    Text(title.uppercase(), color = DimDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -113,13 +111,12 @@ private fun KeyGrid(title: String, keys: List<Key>, onKey: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         keys.forEach { k ->
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = { onKey(k.keys) },
-                shape = RoundedCornerShape(10.dp),
+                shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = CardDark, contentColor = TextDark),
                 modifier = Modifier.weight(1f).height(48.dp),
-            ) { Text(k.label, fontSize = 12.sp, maxLines = 1) }
+            ) { Text(k.label, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
         }
     }
 }

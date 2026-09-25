@@ -7,6 +7,20 @@
     <AssemblyName>PcRemote.Agent</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\pcremote.ico</ApplicationIcon>
+    <Product>PC Remote</Product>
+    <Version>0.4.0</Version>
+  </PropertyGroup>
+
+  <!-- One-file build: `./publish.ps1` (or dotnet publish -p:PublishProfile=SingleExe).
+       Self-contained, so the PC does not need .NET installed. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- SQLite and libsodium are native DLLs: unpacked on first run next to the bundle. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,7 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
-    <!-- All modules referenced so their DLLs copy to bin/ next to the exe. -->
+    <!-- Built-in modules. Program.ModuleAssemblies names one type of each. -->
     <ProjectReference Include="..\PcRemote.Modules.System\PcRemote.Modules.System.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.SystemInfo\PcRemote.Modules.SystemInfo.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
@@ -27,9 +41,15 @@
     <ProjectReference Include="..\PcRemote.Modules.Processes\PcRemote.Modules.Processes.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Windows\PcRemote.Modules.Windows.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Media\PcRemote.Modules.Media.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Network\PcRemote.Modules.Network.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Files\PcRemote.Modules.Files.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Terminal\PcRemote.Modules.Terminal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Defaults live inside the exe; an appsettings.json next to it (or in
+         %LOCALAPPDATA%\PcRemote) only overrides what it sets. -->
+    <EmbeddedResource Include="appsettings.json" LogicalName="PcRemote.Agent.appsettings.json" />
+    <EmbeddedResource Include="Assets\pcremote.ico" LogicalName="PcRemote.Agent.pcremote.ico" />
   </ItemGroup>
 </Project>

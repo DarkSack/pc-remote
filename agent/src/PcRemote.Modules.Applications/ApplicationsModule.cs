@@ -25,6 +25,12 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
 {
     public string Domain => "applications";
 
+    private readonly PcRemote.Core.Activity.ActivityLog? _activity;
+
+    public ApplicationsModule(PcRemote.Core.Activity.ActivityLog activity) => _activity = activity;
+
+    internal ApplicationsModule() { }
+
     public IReadOnlyList<CommandDescriptor> Commands { get; } = new[]
     {
         new CommandDescriptor("list",   "Enumerar apps instaladas (Start Menu + Registry + UWP)"),
@@ -41,7 +47,7 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
             return Task.FromResult(req.Action switch
             {
                 "list"   => List(req),
-                "launch" => Launch(req),
+                "launch" => Launch(req, session),
                 _ => CommandResponse.Fail(req.Id, ErrorCodes.InvalidCommand, $"Unknown action '{req.Action}'"),
             });
         }
@@ -71,7 +77,7 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
         applications = apps.Select(a => new { id = a.Id, name = a.Name, source = a.Source }).ToList(),
     };
 
-    private static CommandResponse Launch(CommandRequest req)
+    private CommandResponse Launch(CommandRequest req, ClientSession session)
     {
         var p = req.Params ?? default;
         var id = p.GetProperty("id").GetString() ?? "";
@@ -101,6 +107,7 @@ public sealed class ApplicationsModule : ICommandModule, IStreamModule
         try { Process.Start(psi)?.Dispose(); }
         catch (Exception ex) { return CommandResponse.Fail(req.Id, ErrorCodes.InternalError, $"Launch failed: {ex.Message}"); }
 
+        _activity?.Add("app", $"{entry.Name} abierto", session.DeviceName, "success");
         return CommandResponse.Ok(req.Id, new { launched = entry.Name, id = entry.Id, source = entry.Source });
     }
 

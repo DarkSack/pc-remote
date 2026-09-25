@@ -94,6 +94,8 @@ public static class ErrorCodes
     public const string InternalError     = "INTERNAL_ERROR";
     public const string RateLimited       = "RATE_LIMITED";
     public const string PairingFailed     = "PAIRING_FAILED";
+    /// <summary>Optional feature or plugin switched off in the panel.</summary>
+    public const string FeatureDisabled   = "FEATURE_DISABLED";
 }
 
 // ── Pairing / Auth messages ─────────────────────────────────────

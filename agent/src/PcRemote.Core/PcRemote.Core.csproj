@@ -25,4 +25,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Panel\panel.html" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PcRemote.Tests" />
+  </ItemGroup>
 </Project>

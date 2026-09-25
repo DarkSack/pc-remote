@@ -15,8 +15,8 @@ android {
         applicationId = "com.sack.pcremote"
         minSdk = 26          // Android 8.0
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     buildTypes {
@@ -35,7 +35,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true   // BuildConfig.VERSION_NAME for Ajustes > Acerca de
+    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -56,8 +59,13 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    // Bottom bar on phones, navigation rail on tablets / unfolded foldables.
+    implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.10.1")
+
+    // Optional app lock (fingerprint / face / device PIN).
+    implementation("androidx.biometric:biometric:1.1.0")
 
     // ONLY to migrate credentials saved by versions <= 0.1.0. The library is
     // deprecated; CredentialsStore now encrypts with Android Keystore directly.

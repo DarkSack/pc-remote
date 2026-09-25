@@ -3,9 +3,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using PcRemote.Core.Activity;
 using PcRemote.Core.Auth;
 using PcRemote.Core.Config;
 using PcRemote.Core.Discovery;
+using PcRemote.Core.Plugins;
 using PcRemote.Core.Security;
 using PcRemote.Core.Server;
 using QRCoder;
@@ -35,6 +37,11 @@ namespace PcRemote.Core.Panel;
 //   GET  /api/pair/qr?data=... → PNG del QR
 //   GET  /api/audit     → últimos comandos ejecutados (sin parámetros ni input continuo)
 //   GET  /api/logs      → últimas líneas del ring buffer
+//   GET  /api/activity  → línea de tiempo (la misma que ve la app)
+//   GET  /api/plugins   → funciones opcionales y plugins instalados
+//   POST /api/features/:key?enabled=bool → activa/desactiva (terminal, files, plugin:<id>)
+//   POST /api/plugins/open-folder → abre la carpeta de plugins en el Explorador
+//   GET  /favicon.svg
 // ══════════════════════════════════════════════════════════════
 public static class PanelEndpoints
 {
@@ -215,6 +222,50 @@ public static class PanelEndpoints
             return Results.Json(audit.Recent(limit ?? 100), Json);
         });
 
+        app.MapGet("/favicon.svg", (HttpContext ctx) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return Results.Text(FaviconSvg, "image/svg+xml");
+        });
+
+        app.MapGet("/api/activity", (HttpContext ctx, ActivityLog activity, int? limit) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return Results.Json(activity.Recent(limit ?? 60), Json);
+        });
+
+        app.MapGet("/api/plugins", (HttpContext ctx, PluginsModule plugins) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            return Results.Json(plugins.Describe(), Json);
+        });
+
+        // Only keys that exist: an optional module's domain, or plugin:<id> of a folder found now.
+        app.MapPost("/api/features/{key}", (HttpContext ctx, string key, bool enabled,
+            FeatureStore features, PluginsModule plugins, ActivityLog activity) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            var label = plugins.FeatureLabel(key);
+            if (label is null) return Results.NotFound();
+
+            features.Set(key, enabled);
+            activity.Add("plugin", $"{label} {(enabled ? "activado" : "desactivado")} en el panel", null, enabled ? "success" : "info");
+            return Results.Ok(new { key, enabled });
+        });
+
+        app.MapPost("/api/plugins/open-folder", (HttpContext ctx, PluginCatalog catalog) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            catalog.EnsureFolder();
+            Directory.CreateDirectory(catalog.Root);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = catalog.Root,
+                UseShellExecute = true,
+            })?.Dispose();
+            return Results.Ok(new { folder = catalog.Root });
+        });
+
         app.MapGet("/api/logs", (HttpContext ctx, int? limit) =>
         {
             if (!Match(ctx)) return Results.NotFound();
@@ -248,6 +299,10 @@ public static class PanelEndpoints
     }
 
     private static string GuessLanIp() => LanAddress.Guess();
+
+    /// <summary>Same mark as branding/logo.svg.</summary>
+    private const string FaviconSvg =
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'><rect x='4' y='4' width='100' height='100' rx='26' fill='#10161D'/><g fill='none' stroke='#57D9C3' stroke-linecap='round'><path stroke-width='5' d='M62.875 34.968 A21 21 0 0 1 74.92 55.831 M66.045 71.203 A21 21 0 0 1 41.955 71.203 M33.08 55.831 A21 21 0 0 1 45.125 34.968'/></g><g fill='#57D9C3'><circle cx='54' cy='54' r='8.5'/><circle cx='54' cy='33' r='5'/><circle cx='72.187' cy='64.5' r='5'/><circle cx='35.813' cy='64.5' r='5'/></g></svg>";
 
     private static string GetVersion() =>
         typeof(PanelEndpoints).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
