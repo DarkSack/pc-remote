@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand background (assets/brand/app-icon.svg). -->
+    <color name="ic_launcher_background">#FF0E1519</color>
+    <!-- Window background before Compose draws: matches the dark theme's background
+         (values-night) or the light one, so there is no flash on start. -->
+    <color name="window_background">#FFF5F8F8</color>
+</resources>

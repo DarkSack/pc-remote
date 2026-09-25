@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -71,6 +72,16 @@ class Discovery(private val context: Context) {
             resolver.cancel()
         }
     }
+
+    /**
+     * Looks for one PC by its certificate fingerprint, for up to [timeoutMs].
+     * Used when a paired PC stops answering at its saved address: it may just
+     * have a new IP from the router.
+     */
+    suspend fun find(fingerprint: String, timeoutMs: Long = 6_000): DiscoveredAgent? =
+        withTimeoutOrNull(timeoutMs) {
+            scan().firstOrNull { it.fingerprint.equals(fingerprint, ignoreCase = true) }
+        }
 
     @Suppress("DEPRECATION") // resolveService: its replacement needs API 34.
     private suspend fun resolve(info: NsdServiceInfo): DiscoveredAgent? =

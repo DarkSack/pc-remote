@@ -15,8 +15,8 @@ android {
         applicationId = "com.sack.pcremote"
         minSdk = 26          // Android 8.0
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     buildTypes {
@@ -56,6 +56,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    // NavigationBar on phones, NavigationRail on tablets / unfolded foldables.
+    implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.10.1")
 
@@ -68,6 +70,11 @@ dependencies {
     // en la app y sin meter un modelo de ML en el APK. Sin Play services queda el
     // emparejamiento manual con código.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
+    // Bloqueo con huella / cara / PIN del móvil (Ajustes → Seguridad).
+    implementation("androidx.biometric:biometric:1.1.0")
+    // BiometricPrompt needs a FragmentActivity; biometric 1.1.0 alone would pull fragment 1.2.
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
 
     // Cliente WebSocket + cert pinning.
     implementation("com.squareup.okhttp3:okhttp:5.5.0")

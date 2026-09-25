@@ -1,77 +1,89 @@
 package com.sack.pcremote.ui
 
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.navArgument
-import androidx.compose.runtime.Composable
-import com.sack.pcremote.data.CredentialsStore
-import com.sack.pcremote.net.Discovery
-import com.sack.pcremote.ui.screens.DashboardScreen
-import com.sack.pcremote.ui.screens.DiscoveryScreen
-import com.sack.pcremote.ui.screens.PairScreen
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
+import com.sack.pcremote.AppGraph
+import com.sack.pcremote.ui.devices.DevicesScreen
+import com.sack.pcremote.ui.devices.PairScreen
+import com.sack.pcremote.ui.pc.PcShell
+import kotlinx.serialization.Serializable
 
 // ══════════════════════════════════════════════════════════════
-// NavHost raíz. Rutas:
-//   discovery                → lista de emparejados + mDNS scan
-//   pair/{host}/{port}/{name}?code=&fp= → emparejar con código, o por QR si vienen code y fp
-//   dashboard/{deviceId}      → un PC: inicio + touchpad, teclado, multimedia, apps, portapapeles
+// Navegación raíz (type-safe):
+//   Devices              → tus PCs + los que se ven en la red + escanear QR
+//   Pair(host, port, …)  → emparejar con código, o por QR si trae code y fp
+//   Pc(deviceId)         → el Command Center de un PC (su propia navegación)
+//
+// Al abrir la app se entra directo al último PC usado; Atrás vuelve a la
+// lista de equipos.
 // ══════════════════════════════════════════════════════════════
 
-// Route segments must not contain "/" or "?": a PC name like "Sala/TV" broke navigation.
-private fun enc(s: String) = android.net.Uri.encode(s)
+@Serializable object DevicesRoute
+@Serializable data class PairRoute(val host: String, val port: Int, val name: String, val code: String? = null, val fp: String? = null)
+@Serializable data class PcRoute(val deviceId: String)
 
 @Composable
-fun PcRemoteApp(nav: NavHostController, store: CredentialsStore, discovery: Discovery) {
-    NavHost(navController = nav, startDestination = "discovery") {
+fun PcRemoteApp(graph: AppGraph) {
+    val nav = rememberNavController()
 
-        composable("discovery") {
-            DiscoveryScreen(
-                store     = store,
-                discovery = discovery,
-                onPair    = { agent ->
-                    nav.navigate("pair/${enc(agent.host)}/${agent.port}/${enc(agent.name)}")
-                },
-                onPairQr  = { qr ->
-                    nav.navigate("pair/${enc(qr.host)}/${qr.port}/${enc(qr.name)}?code=${qr.code}&fp=${qr.fp}")
-                },
-                onOpen    = { deviceId ->
-                    nav.navigate("dashboard/$deviceId")
-                },
+    // Straight into the last PC, once per launch (not on every recomposition).
+    val lastPc = remember {
+        graph.settings.settings.value.lastDeviceId?.takeIf { graph.credentials.load(it) != null }
+    }
+    LaunchedEffect(Unit) {
+        if (lastPc != null && nav.currentDestination?.hasRoute(PcRoute::class) != true) nav.navigate(PcRoute(lastPc))
+    }
+
+    NavHost(
+        navController = nav,
+        startDestination = DevicesRoute,
+        enterTransition = { slideInHorizontally { it / 6 } + fadeIn() },
+        exitTransition = { fadeOut() },
+        popEnterTransition = { fadeIn() },
+        popExitTransition = { slideOutHorizontally { it / 6 } + fadeOut() },
+    ) {
+        composable<DevicesRoute> {
+            DevicesScreen(
+                graph = graph,
+                onPair = { agent -> nav.navigate(PairRoute(agent.host, agent.port, agent.name)) },
+                onPairQr = { qr -> nav.navigate(PairRoute(qr.host, qr.port, qr.name, qr.code, qr.fp)) },
+                onOpen = { id -> nav.navigate(PcRoute(id)) },
             )
         }
 
-        composable(
-            "pair/{host}/{port}/{name}?code={code}&fp={fp}",
-            arguments = listOf(
-                navArgument("code") { type = NavType.StringType; nullable = true; defaultValue = null },
-                navArgument("fp") { type = NavType.StringType; nullable = true; defaultValue = null },
-            ),
-        ) { backStack ->
-            val args = backStack.arguments
-            // Navigation already decodes path arguments; decoding again would mangle a "%" in a name.
-            val host = args?.getString("host") ?: ""
-            val port = args?.getString("port")?.toIntOrNull() ?: 47820
-            val name = args?.getString("name") ?: ""
+        composable<PairRoute> { entry ->
+            val r = entry.toRoute<PairRoute>()
             PairScreen(
-                host = host, port = port, agentName = name, store = store,
+                host = r.host, port = r.port, agentName = r.name,
+                store = graph.credentials,
+                qrCode = r.code, qrFingerprint = r.fp,
                 // Straight into the new PC; Back from there returns to the list, not to pairing.
-                onPaired = { deviceId ->
-                    nav.navigate("dashboard/$deviceId") { popUpTo("discovery") { inclusive = false } }
-                },
-                onBack = { nav.popBackStack("discovery", inclusive = false) },
-                qrCode = args?.getString("code"),
-                qrFingerprint = args?.getString("fp"),
+                onPaired = { id -> nav.navigate(PcRoute(id)) { popUpTo(DevicesRoute) } },
+                onBack = { nav.popBackStack(DevicesRoute, inclusive = false) },
             )
         }
 
-        composable("dashboard/{deviceId}") { backStack ->
-            val id = backStack.arguments?.getString("deviceId") ?: return@composable
-            DashboardScreen(
-                deviceId = id,
-                store    = store,
-                onBack   = { nav.popBackStack() },
+        composable<PcRoute> { entry ->
+            val r = entry.toRoute<PcRoute>()
+            LaunchedEffect(r.deviceId) { graph.settings.update { it.copy(lastDeviceId = r.deviceId) } }
+            PcShell(
+                deviceId = r.deviceId,
+                graph = graph,
+                onExit = { nav.popBackStack(DevicesRoute, inclusive = false) },
+                onUnpaired = {
+                    graph.settings.update { it.copy(lastDeviceId = null) }
+                    nav.popBackStack(DevicesRoute, inclusive = false)
+                },
             )
         }
     }
