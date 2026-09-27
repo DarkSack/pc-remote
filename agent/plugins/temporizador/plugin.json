@@ -1,0 +1,42 @@
+{
+  "name": "Temporizador de apagado",
+  "description": "Apagar, reiniciar, suspender o hibernar dentro de X minutos. Se puede cancelar.",
+  "icon": "timer",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "programar",
+      "label": "Programar",
+      "icon": "timer",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "temporizador.ps1", "{accion}", "{minutos}"],
+      "params": [
+        { "id": "accion", "label": "Qué hacer", "type": "choice",
+          "options": ["Apagar", "Reiniciar", "Suspender", "Hibernar"], "default": "Apagar" },
+        { "id": "minutos", "label": "Dentro de (minutos)", "type": "number", "min": 1, "max": 1440, "default": 60 }
+      ],
+      "confirm": "¿{accion} el PC dentro de {minutos} minutos?",
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "estado",
+      "label": "Ver lo programado",
+      "icon": "timer",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "temporizador.ps1", "Estado"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "cancelar",
+      "label": "Cancelar",
+      "icon": "timer",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "temporizador.ps1", "Cancelar"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

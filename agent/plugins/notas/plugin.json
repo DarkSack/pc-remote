@@ -1,0 +1,37 @@
+{
+  "name": "Notas rápidas",
+  "description": "Apuntar algo desde el móvil en un archivo de notas del PC (Documentos\\PC Remote\\notas.txt).",
+  "icon": "note",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "apuntar",
+      "label": "Apuntar una nota",
+      "icon": "note",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "notas.ps1", "apuntar", "{texto}"],
+      "params": [ { "id": "texto", "label": "Nota", "type": "string", "maxLength": 2000 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "ver",
+      "label": "Ver las últimas notas",
+      "icon": "note",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "notas.ps1", "ver"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "abrir",
+      "label": "Abrir las notas en el PC",
+      "icon": "note",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "notas.ps1", "abrir"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

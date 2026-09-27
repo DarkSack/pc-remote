@@ -1,0 +1,49 @@
+{
+  "name": "Escritorio y apariencia",
+  "description": "Mostrar el escritorio, tema claro u oscuro y reiniciar el Explorador si la barra de tareas se cuelga.",
+  "icon": "palette",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "mostrar-escritorio",
+      "label": "Mostrar el escritorio",
+      "description": "Minimiza todo (o lo restaura si ya estaba).",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorio.ps1", "escritorio"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "tema",
+      "label": "Tema claro u oscuro",
+      "icon": "dark_mode",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorio.ps1", "tema", "{tema}"],
+      "params": [
+        { "id": "tema", "label": "Tema", "type": "choice", "options": ["Alternar", "Oscuro", "Claro"], "default": "Alternar" }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "reiniciar-explorer",
+      "label": "Reiniciar el Explorador",
+      "description": "Arregla la barra de tareas o el menú Inicio colgados. Cierra las ventanas del Explorador de archivos.",
+      "icon": "build",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorio.ps1", "explorer"],
+      "confirm": "¿Reiniciar el Explorador? La barra de tareas desaparecerá un momento y se cerrarán las carpetas abiertas.",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 30
+    },
+    {
+      "id": "papelera-reciclaje",
+      "label": "Abrir la papelera",
+      "icon": "delete",
+      "open": "shell:RecycleBinFolder"
+    }
+  ]
+}

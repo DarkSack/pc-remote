@@ -1,0 +1,48 @@
+{
+  "name": "Buscar archivos",
+  "description": "Encontrar archivos por nombre y ver lo último descargado o abierto. Con la ruta, bájalos desde Archivos.",
+  "icon": "search",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "buscar",
+      "label": "Buscar por nombre",
+      "description": "Con el índice de Windows Search; si no encuentra nada, recorre tu usuario, Escritorio, Documentos, Descargas…",
+      "icon": "search",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "archivos.ps1", "buscar", "{nombre}"],
+      "params": [
+        { "id": "nombre", "label": "Parte del nombre", "type": "string", "placeholder": "factura, .pdf, foto…",
+          "pattern": "[^\\\\/:*?\"<>|]{2,100}", "maxLength": 100 }
+      ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 120
+    },
+    {
+      "id": "descargas",
+      "label": "Últimas descargas",
+      "icon": "download",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "archivos.ps1", "descargas"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "recientes",
+      "label": "Abiertos recientemente",
+      "icon": "folder",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "archivos.ps1", "recientes"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "abrir-descargas",
+      "label": "Abrir Descargas en el PC",
+      "icon": "folder",
+      "open": "shell:Downloads"
+    }
+  ]
+}

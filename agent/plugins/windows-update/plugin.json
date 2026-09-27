@@ -1,0 +1,46 @@
+{
+  "name": "Windows Update",
+  "description": "Actualizaciones pendientes, las últimas instaladas y buscar nuevas.",
+  "icon": "system_update",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "pendientes",
+      "label": "Actualizaciones pendientes",
+      "description": "Consulta a Windows Update. Puede tardar un par de minutos.",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "wu.ps1", "pendientes"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 300
+    },
+    {
+      "id": "historial",
+      "label": "Últimas instaladas",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "wu.ps1", "historial"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 60
+    },
+    {
+      "id": "reinicio",
+      "label": "¿Hace falta reiniciar?",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "wu.ps1", "reinicio"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "buscar",
+      "label": "Buscar actualizaciones",
+      "description": "Abre Windows Update en el PC y empieza a buscar.",
+      "icon": "system_update",
+      "open": "ms-settings:windowsupdate-action"
+    }
+  ]
+}

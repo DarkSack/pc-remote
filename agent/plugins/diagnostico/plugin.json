@@ -1,0 +1,59 @@
+{
+  "name": "Diagnóstico",
+  "description": "Cuánto lleva encendido, reinicios y apagados inesperados, errores recientes y programas de inicio.",
+  "icon": "troubleshoot",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "encendido",
+      "label": "Tiempo encendido",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "diagnostico.ps1", "encendido"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "reinicios",
+      "label": "Reinicios y apagados",
+      "description": "Incluye apagados inesperados y pantallazos azules.",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "diagnostico.ps1", "reinicios"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 60
+    },
+    {
+      "id": "errores",
+      "label": "Errores de las últimas 24 h",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "diagnostico.ps1", "errores"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 60
+    },
+    {
+      "id": "inicio",
+      "label": "Programas de inicio",
+      "description": "Lo que arranca con Windows.",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "diagnostico.ps1", "inicio"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "temperaturas",
+      "label": "Temperatura y ventiladores",
+      "description": "Lo que exponga la placa a Windows (muchos equipos no exponen nada sin programas del fabricante).",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "diagnostico.ps1", "temperaturas"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

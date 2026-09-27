@@ -1,0 +1,47 @@
+{
+  "name": "Salida de audio",
+  "description": "Cambiar entre altavoces, auriculares, HDMI… sin tocar el PC.",
+  "icon": "headphones",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "siguiente",
+      "label": "Siguiente salida",
+      "description": "Pasa a la siguiente salida de audio activa.",
+      "icon": "headphones",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "audio.ps1", "siguiente"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "listar",
+      "label": "Ver salidas",
+      "icon": "headphones",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "audio.ps1", "listar"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "elegir",
+      "label": "Elegir salida por número",
+      "description": "El número que aparece en «Ver salidas».",
+      "icon": "headphones",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "audio.ps1", "elegir", "{numero}"],
+      "params": [
+        { "id": "numero", "label": "Número", "type": "number", "min": 1, "max": 50, "default": 1 }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "mezclador",
+      "label": "Abrir el mezclador de volumen",
+      "icon": "volume",
+      "run": "sndvol.exe"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "Accesos a Configuración",
+  "description": "Abre en el PC la página de Configuración o la herramienta que necesites.",
+  "icon": "settings",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    { "id": "pantalla",       "label": "Pantalla",                    "icon": "desktop_windows", "open": "ms-settings:display" },
+    { "id": "sonido",         "label": "Sonido",                      "icon": "volume",          "open": "ms-settings:sound" },
+    { "id": "wifi",           "label": "Wi-Fi",                       "icon": "wifi",            "open": "ms-settings:network-wifi" },
+    { "id": "red",            "label": "Red e Internet",              "icon": "lan",             "open": "ms-settings:network-status" },
+    { "id": "energia",        "label": "Energía y suspensión",        "icon": "battery",         "open": "ms-settings:powersleep" },
+    { "id": "almacenamiento", "label": "Almacenamiento",              "icon": "storage",         "open": "ms-settings:storagesense" },
+    { "id": "apps",           "label": "Aplicaciones instaladas",     "icon": "apps",            "open": "ms-settings:appsfeatures" },
+    { "id": "inicio",         "label": "Aplicaciones de arranque",    "icon": "apps",            "open": "ms-settings:startupapps" },
+    { "id": "notificaciones", "label": "Notificaciones",              "icon": "notifications",   "open": "ms-settings:notifications" },
+    { "id": "administrador-dispositivos", "label": "Administrador de dispositivos", "icon": "build", "open": "%WINDIR%\\System32\\devmgmt.msc" },
+    { "id": "panel-control",  "label": "Panel de control",            "icon": "settings",        "run": "control.exe" },
+    { "id": "visor-eventos",  "label": "Visor de eventos",            "icon": "troubleshoot",    "open": "%WINDIR%\\System32\\eventvwr.msc" },
+    { "id": "servicios",      "label": "Servicios",                   "icon": "build",           "open": "%WINDIR%\\System32\\services.msc" }
+  ]
+}

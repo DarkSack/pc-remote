@@ -139,26 +139,117 @@ public sealed class PluginCatalog
     }
 
     /// <summary>
-    /// First run: creates the folder with a README and one example plugin (disabled,
-    /// like every plugin until the owner enables it in the panel).
+    /// Creates the folder (with a README) if needed and copies out the plugins that ship
+    /// with the agent. They arrive disabled, like every plugin until the owner enables
+    /// it in the panel.
     /// </summary>
     public void EnsureFolder()
     {
         try
         {
-            if (System.IO.Directory.Exists(Root)) return;
             System.IO.Directory.CreateDirectory(Root);
-            File.WriteAllText(Path.Combine(Root, "LEEME.txt"), Readme);
-            var example = Path.Combine(Root, "utilidades-windows");
-            System.IO.Directory.CreateDirectory(example);
-            File.WriteAllText(Path.Combine(example, "plugin.json"), ExamplePlugin);
-            _logger.LogInformation("Created plugins folder at {Root}", Root);
+            var readme = Path.Combine(Root, "LEEME.txt");
+            if (!File.Exists(readme)) File.WriteAllText(readme, Readme);
+            InstallBundled(BundledPlugins.All);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not create the plugins folder {Root}", Root);
+            _logger.LogWarning(ex, "Could not prepare the plugins folder {Root}", Root);
         }
     }
+
+    private const string StateFile = ".incluidos.json";
+
+    /// <summary>What was copied out of the agent, per plugin id. A null hash means "not ours: never touch".</summary>
+    private sealed record InstalledBundle(string? Version, string? Hash);
+
+    /// <summary>
+    /// The folder belongs to the owner, so a bundled plugin is only written:
+    ///  - the first time the agent sees it (and no folder with that name exists);
+    ///  - on a newer version, if the installed files are still exactly what we wrote.
+    /// Deleting a bundled plugin's folder is respected: it does not come back.
+    /// </summary>
+    internal void InstallBundled(IEnumerable<BundledPlugin> bundled)
+    {
+        var statePath = Path.Combine(Root, StateFile);
+        Dictionary<string, InstalledBundle> state;
+        try
+        {
+            state = File.Exists(statePath)
+                ? JsonSerializer.Deserialize<Dictionary<string, InstalledBundle>>(File.ReadAllText(statePath), ReadOptions) ?? new()
+                : new();
+        }
+        catch (JsonException) { state = new(); }
+        state = new Dictionary<string, InstalledBundle>(state, StringComparer.OrdinalIgnoreCase);
+
+        var changed = false;
+        foreach (var plugin in bundled)
+        {
+            var dir = Path.Combine(Root, plugin.Id);
+            if (!state.TryGetValue(plugin.Id, out var known))
+            {
+                if (System.IO.Directory.Exists(dir))
+                {
+                    // Already there before the agent tracked it (the owner's own, or an old example).
+                    state[plugin.Id] = new InstalledBundle(null, null);
+                }
+                else
+                {
+                    Write(dir, plugin);
+                    state[plugin.Id] = new InstalledBundle(plugin.Version, plugin.Hash);
+                    _logger.LogInformation("Installed bundled plugin {Id} {Version}", plugin.Id, plugin.Version);
+                }
+                changed = true;
+                continue;
+            }
+
+            if (known.Hash is null || !System.IO.Directory.Exists(dir) || !IsNewer(plugin.Version, known.Version)) continue;
+
+            if (!IsUntouched(dir, known.Hash))
+            {
+                _logger.LogInformation("Bundled plugin {Id} was edited; keeping the owner's copy", plugin.Id);
+                continue;
+            }
+
+            // Untouched means every file there is ours: the ones the new version dropped can go.
+            foreach (var file in System.IO.Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+            {
+                if (!plugin.Files.ContainsKey(Path.GetRelativePath(dir, file).Replace('\\', '/'))) File.Delete(file);
+            }
+            Write(dir, plugin);
+            state[plugin.Id] = new InstalledBundle(plugin.Version, plugin.Hash);
+            _logger.LogInformation("Updated bundled plugin {Id} {Old} → {New}", plugin.Id, known.Version, plugin.Version);
+            changed = true;
+        }
+
+        if (changed)
+            File.WriteAllText(statePath, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    /// <summary>
+    /// The folder holds exactly the files we wrote, unchanged. Editing, adding or removing
+    /// any file makes it the owner's.
+    /// </summary>
+    private static bool IsUntouched(string dir, string recorded)
+    {
+        var files = System.IO.Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
+            .ToList();
+        return string.Equals(BundledPlugin.HashOf(files, p => File.ReadAllBytes(Path.Combine(dir, p))), recorded, StringComparison.Ordinal);
+    }
+
+    private static void Write(string dir, BundledPlugin plugin)
+    {
+        foreach (var (path, bytes) in plugin.Files)
+        {
+            var file = Path.Combine(dir, path);
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllBytes(file, bytes);
+        }
+    }
+
+    private static bool IsNewer(string? candidate, string? installed) =>
+        Version.TryParse(candidate, out var c) && (!Version.TryParse(installed, out var i) || c > i);
 
     private const string Readme = """
         PC Remote — plugins
@@ -172,67 +263,12 @@ public sealed class PluginCatalog
         escriben en el móvil se validan y cada uno ocupa exactamente un
         argumento: nunca pasan por una consola.
 
-        Mira utilidades-windows\plugin.json como ejemplo y la documentación
-        completa en docs/PLUGINS.md del repositorio.
-        """;
+        PC Remote trae una colección de plugins (pantalla, energía, audio,
+        red, limpieza, winget…) que se copian aquí desactivados. Puedes
+        editarlos: una carpeta que hayas tocado ya no se actualiza sola. Si
+        borras una, no vuelve a aparecer.
 
-    private const string ExamplePlugin = """
-        {
-          "name": "Utilidades de Windows",
-          "description": "Ejemplo de plugin: red, papelera y carpetas.",
-          "icon": "build",
-          "version": "1.0.0",
-          "actions": [
-            {
-              "id": "ipconfig",
-              "label": "Ver configuración de red",
-              "icon": "lan",
-              "run": "ipconfig",
-              "args": ["/all"],
-              "output": true
-            },
-            {
-              "id": "flush-dns",
-              "label": "Vaciar caché DNS",
-              "icon": "dns",
-              "run": "ipconfig",
-              "args": ["/flushdns"],
-              "output": true
-            },
-            {
-              "id": "ping",
-              "label": "Hacer ping",
-              "icon": "network_ping",
-              "run": "ping",
-              "args": ["-n", "4", "{host}"],
-              "params": [
-                { "id": "host", "label": "Host o IP", "type": "string", "pattern": "^[A-Za-z0-9.:-]{1,253}$", "default": "1.1.1.1" }
-              ],
-              "output": true,
-              "timeoutSec": 20
-            },
-            {
-              "id": "empty-bin",
-              "label": "Vaciar la papelera",
-              "icon": "delete",
-              "run": "powershell.exe",
-              "args": ["-NoProfile", "-NonInteractive", "-Command", "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
-              "confirm": "¿Vaciar la papelera del PC? No se puede deshacer.",
-              "output": true
-            },
-            {
-              "id": "downloads",
-              "label": "Abrir Descargas",
-              "icon": "folder",
-              "open": "%USERPROFILE%\\Downloads"
-            },
-            {
-              "id": "task-manager",
-              "label": "Administrador de tareas",
-              "icon": "monitoring",
-              "run": "taskmgr.exe"
-            }
-          ]
-        }
+        Mira cualquiera de ellos como ejemplo y la documentación completa en
+        docs/PLUGINS.md del repositorio.
         """;
 }

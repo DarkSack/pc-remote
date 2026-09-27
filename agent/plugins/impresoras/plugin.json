@@ -1,0 +1,39 @@
+{
+  "name": "Impresoras",
+  "description": "Cola de impresión, cancelar trabajos atascados y página de prueba.",
+  "icon": "print",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "cola",
+      "label": "Impresoras y cola",
+      "icon": "print",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "impresoras.ps1", "cola"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "cancelar",
+      "label": "Cancelar todos los trabajos",
+      "icon": "delete",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "impresoras.ps1", "cancelar"],
+      "confirm": "¿Cancelar todo lo que está en cola en todas las impresoras?",
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "prueba",
+      "label": "Imprimir página de prueba",
+      "description": "En la impresora predeterminada.",
+      "icon": "print",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "impresoras.ps1", "prueba"],
+      "confirm": "¿Imprimir una página de prueba en la impresora predeterminada?",
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

@@ -128,6 +128,117 @@ public class PluginParamTests
     }
 }
 
+public class BundledPluginTests
+{
+    private static readonly JsonSerializerOptions Read = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    private static PluginManifest Manifest(BundledPlugin p) =>
+        JsonSerializer.Deserialize<PluginManifest>(p.Files["plugin.json"], Read)!;
+
+    [Fact]
+    public void The_agent_ships_the_plugin_collection()
+    {
+        Assert.True(BundledPlugins.All.Count >= 20, $"Solo hay {BundledPlugins.All.Count} plugins incluidos");
+        Assert.Contains(BundledPlugins.All, p => p.Id == "utilidades-windows");
+    }
+
+    [Fact]
+    public void Every_bundled_plugin_is_valid_and_ships_its_scripts()
+    {
+        foreach (var p in BundledPlugins.All)
+        {
+            var m = Manifest(p);
+            var errors = PluginCatalog.Validate(m, p.Id, ".");
+            Assert.True(errors.Count == 0, $"{p.Id}: {string.Join(" | ", errors)}");
+            Assert.False(string.IsNullOrWhiteSpace(m.Name), $"{p.Id}: sin nombre");
+            Assert.NotNull(p.Version);
+
+            foreach (var a in m.Actions)
+            {
+                var file = a.Args.IndexOf("-File");
+                if (file >= 0) Assert.True(p.Files.ContainsKey(a.Args[file + 1]), $"{p.Id}/{a.Id}: falta {a.Args[file + 1]}");
+
+                // The app fills {param} in the confirmation text; an unknown one would show as is.
+                foreach (System.Text.RegularExpressions.Match match in PluginIds.Placeholder().Matches(a.Confirm ?? ""))
+                    Assert.Contains(a.Params, x => x.Id == match.Groups[1].Value);
+
+                foreach (var param in a.Params.Where(x => x.Type == "choice" && x.Default is not null))
+                    Assert.Contains(param.Default!.Value.GetString(), param.Options!);
+            }
+        }
+    }
+
+    [Fact]
+    public void Scripts_are_utf8_with_bom()
+    {
+        // Windows PowerShell 5.1 reads a .ps1 without BOM as ANSI: every "ó" would break.
+        foreach (var p in BundledPlugins.All)
+        foreach (var (path, bytes) in p.Files.Where(f => f.Key.EndsWith(".ps1")))
+            Assert.True(bytes is [0xEF, 0xBB, 0xBF, ..], $"{p.Id}/{path} sin BOM");
+    }
+
+    private static BundledPlugin Fake(string id, string version, string script) =>
+        new(id, version, new Dictionary<string, byte[]>
+        {
+            ["plugin.json"] = System.Text.Encoding.UTF8.GetBytes($$"""{ "version": "{{version}}", "actions": [ { "id": "a", "run": "x" } ] }"""),
+            ["x.ps1"] = System.Text.Encoding.UTF8.GetBytes(script),
+        });
+
+    private static (PluginCatalog Catalog, string Root) NewCatalog()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pcremote-bundled-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return (new PluginCatalog(root, NullLogger<PluginCatalog>.Instance), root);
+    }
+
+    [Fact]
+    public void Installs_once_and_updates_only_untouched_copies()
+    {
+        var (catalog, root) = NewCatalog();
+        try
+        {
+            catalog.InstallBundled([Fake("uno", "1.0.0", "v1"), Fake("dos", "1.0.0", "v1")]);
+            Assert.Equal("v1", File.ReadAllText(Path.Combine(root, "uno", "x.ps1")));
+
+            // The owner edits "dos"; a newer agent updates "uno" and leaves "dos" alone.
+            File.WriteAllText(Path.Combine(root, "dos", "x.ps1"), "mío");
+            catalog.InstallBundled([Fake("uno", "1.1.0", "v2"), Fake("dos", "1.1.0", "v2")]);
+            Assert.Equal("v2", File.ReadAllText(Path.Combine(root, "uno", "x.ps1")));
+            Assert.Equal("mío", File.ReadAllText(Path.Combine(root, "dos", "x.ps1")));
+
+            // Same version again: nothing to do.
+            File.WriteAllText(Path.Combine(root, "uno", "x.ps1"), "v2");
+            catalog.InstallBundled([Fake("uno", "1.1.0", "v3")]);
+            Assert.Equal("v2", File.ReadAllText(Path.Combine(root, "uno", "x.ps1")));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void A_deleted_or_preexisting_folder_is_left_alone()
+    {
+        var (catalog, root) = NewCatalog();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "propio"));
+            File.WriteAllText(Path.Combine(root, "propio", "plugin.json"), "{}");
+            catalog.InstallBundled([Fake("borrado", "1.0.0", "v1"), Fake("propio", "1.0.0", "v1")]);
+            Assert.Equal("{}", File.ReadAllText(Path.Combine(root, "propio", "plugin.json")));
+
+            Directory.Delete(Path.Combine(root, "borrado"), recursive: true);
+            catalog.InstallBundled([Fake("borrado", "2.0.0", "v2"), Fake("propio", "2.0.0", "v2")]);
+            Assert.False(Directory.Exists(Path.Combine(root, "borrado")));
+            Assert.Equal("{}", File.ReadAllText(Path.Combine(root, "propio", "plugin.json")));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+}
+
 public class FeatureStoreTests
 {
     [Fact]

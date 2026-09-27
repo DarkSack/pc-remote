@@ -1,0 +1,72 @@
+{
+  "name": "Red e internet",
+  "description": "IP pública, test de velocidad, traceroute, DNS y puertos abiertos.",
+  "icon": "public",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "ip-publica",
+      "label": "IP pública",
+      "icon": "public",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "red.ps1", "ip"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "velocidad",
+      "label": "Test de velocidad",
+      "description": "Latencia y descarga de 25 MB desde Cloudflare.",
+      "icon": "network_ping",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "red.ps1", "velocidad"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 90
+    },
+    {
+      "id": "traceroute",
+      "label": "Traceroute",
+      "icon": "lan",
+      "run": "tracert.exe",
+      "args": ["-d", "-h", "20", "-w", "800", "{host}"],
+      "params": [
+        { "id": "host", "label": "Host o IP", "type": "string", "pattern": "[A-Za-z0-9][A-Za-z0-9.:-]{0,252}", "default": "1.1.1.1" }
+      ],
+      "output": true,
+      "timeoutSec": 120
+    },
+    {
+      "id": "dns",
+      "label": "Consultar DNS",
+      "icon": "dns",
+      "run": "nslookup.exe",
+      "args": ["{host}"],
+      "params": [
+        { "id": "host", "label": "Dominio", "type": "string", "pattern": "[A-Za-z0-9][A-Za-z0-9.-]{0,252}", "default": "google.com" }
+      ],
+      "output": true,
+      "timeoutSec": 20
+    },
+    {
+      "id": "puertos",
+      "label": "Puertos en escucha",
+      "description": "Qué programas esperan conexiones y en qué puerto.",
+      "icon": "lan",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "red.ps1", "puertos"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "conexiones",
+      "label": "Programas conectados a internet",
+      "icon": "lan",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "red.ps1", "conexiones"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

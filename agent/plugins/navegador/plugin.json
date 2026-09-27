@@ -1,0 +1,62 @@
+{
+  "name": "Navegador",
+  "description": "Abrir en el PC un enlace o una búsqueda escrita en el móvil.",
+  "icon": "browser",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "abrir-url",
+      "label": "Abrir un enlace",
+      "icon": "browser",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "abrir.ps1", "url", "{url}"],
+      "params": [
+        { "id": "url", "label": "Enlace", "type": "string", "placeholder": "https://…",
+          "pattern": "https?://\\S{1,2000}", "maxLength": 2008 }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "google",
+      "label": "Buscar en Google",
+      "icon": "search",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "abrir.ps1", "google", "{texto}"],
+      "params": [ { "id": "texto", "label": "Buscar", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "youtube",
+      "label": "Buscar en YouTube",
+      "icon": "play",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "abrir.ps1", "youtube", "{texto}"],
+      "params": [ { "id": "texto", "label": "Buscar", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "youtube-music",
+      "label": "Buscar en YouTube Music",
+      "icon": "music",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "abrir.ps1", "ytmusic", "{texto}"],
+      "params": [ { "id": "texto", "label": "Canción o artista", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "maps",
+      "label": "Buscar en Google Maps",
+      "icon": "map",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "abrir.ps1", "maps", "{texto}"],
+      "params": [ { "id": "texto", "label": "Lugar o dirección", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

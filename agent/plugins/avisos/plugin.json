@@ -1,0 +1,53 @@
+{
+  "name": "Avisos en el PC",
+  "description": "Notificación, mensaje en pantalla, leer un texto en voz alta o hacer sonar el PC para encontrarlo.",
+  "icon": "notifications",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "notificacion",
+      "label": "Enviar una notificación",
+      "icon": "notifications",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "avisos.ps1", "notificacion", "{texto}"],
+      "params": [ { "id": "texto", "label": "Texto", "type": "string", "maxLength": 300 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "mensaje",
+      "label": "Mostrar un mensaje en pantalla",
+      "description": "Una ventana encima de todo que se queda hasta que alguien pulsa Aceptar.",
+      "icon": "notifications",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "avisos.ps1", "mensaje", "{texto}"],
+      "params": [ { "id": "texto", "label": "Mensaje", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "voz",
+      "label": "Decir en voz alta",
+      "icon": "voice",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "avisos.ps1", "voz", "{texto}"],
+      "params": [ { "id": "texto", "label": "Texto", "type": "string", "maxLength": 500 } ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 90
+    },
+    {
+      "id": "sonar",
+      "label": "Hacer sonar el PC",
+      "description": "Una alarma durante unos segundos, a buen volumen.",
+      "icon": "volume",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "avisos.ps1", "sonar", "{segundos}"],
+      "params": [ { "id": "segundos", "label": "Segundos", "type": "number", "min": 1, "max": 60, "default": 10 } ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 75
+    }
+  ]
+}

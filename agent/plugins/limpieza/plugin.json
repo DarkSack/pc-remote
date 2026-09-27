@@ -1,0 +1,60 @@
+{
+  "name": "Limpieza",
+  "description": "Temporales, papelera y descargas viejas: ver cuánto ocupan y liberar espacio.",
+  "icon": "cleaning",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "resumen",
+      "label": "¿Cuánto se puede liberar?",
+      "description": "Temporales, papelera y descargas de hace más de 30 días. No borra nada.",
+      "icon": "cleaning",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "limpieza.ps1", "resumen"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 120
+    },
+    {
+      "id": "temporales",
+      "label": "Borrar archivos temporales",
+      "description": "Los de %TEMP% con más de un día. Los que estén en uso se saltan.",
+      "icon": "cleaning",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "limpieza.ps1", "temporales"],
+      "confirm": "¿Borrar los archivos temporales de más de un día?",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 300
+    },
+    {
+      "id": "papelera",
+      "label": "Vaciar la papelera",
+      "icon": "delete",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "limpieza.ps1", "papelera"],
+      "confirm": "¿Vaciar la papelera del PC? No se puede deshacer.",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 120
+    },
+    {
+      "id": "descargas-viejas",
+      "label": "Descargas antiguas",
+      "description": "Lista lo que lleva más de 30 días en Descargas, de mayor a menor. No borra nada.",
+      "icon": "download",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "limpieza.ps1", "descargas"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 60
+    },
+    {
+      "id": "liberador",
+      "label": "Abrir el Liberador de espacio",
+      "icon": "cleaning",
+      "run": "cleanmgr.exe"
+    }
+  ]
+}

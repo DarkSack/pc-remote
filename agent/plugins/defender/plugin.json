@@ -1,0 +1,54 @@
+{
+  "name": "Seguridad de Windows",
+  "description": "Estado del antivirus de Windows, análisis rápido, actualizar firmas y amenazas encontradas.",
+  "icon": "security",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "estado",
+      "label": "Estado de la protección",
+      "icon": "security",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "defender.ps1", "estado"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "analisis-rapido",
+      "label": "Análisis rápido",
+      "description": "Suele tardar entre 2 y 10 minutos.",
+      "icon": "security",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "defender.ps1", "analisis"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 600
+    },
+    {
+      "id": "firmas",
+      "label": "Actualizar las firmas",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "defender.ps1", "firmas"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 300
+    },
+    {
+      "id": "amenazas",
+      "label": "Amenazas encontradas",
+      "icon": "security",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "defender.ps1", "amenazas"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "abrir",
+      "label": "Abrir Seguridad de Windows",
+      "icon": "security",
+      "open": "windowsdefender:"
+    }
+  ]
+}

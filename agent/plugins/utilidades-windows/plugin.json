@@ -1,0 +1,57 @@
+{
+  "name": "Utilidades de Windows",
+  "description": "Ejemplo de plugin: red, papelera y carpetas.",
+  "icon": "build",
+  "version": "1.0.0",
+  "actions": [
+    {
+      "id": "ipconfig",
+      "label": "Ver configuración de red",
+      "icon": "lan",
+      "run": "ipconfig",
+      "args": ["/all"],
+      "output": true
+    },
+    {
+      "id": "flush-dns",
+      "label": "Vaciar caché DNS",
+      "icon": "dns",
+      "run": "ipconfig",
+      "args": ["/flushdns"],
+      "output": true
+    },
+    {
+      "id": "ping",
+      "label": "Hacer ping",
+      "icon": "network_ping",
+      "run": "ping",
+      "args": ["-n", "4", "{host}"],
+      "params": [
+        { "id": "host", "label": "Host o IP", "type": "string", "pattern": "^[A-Za-z0-9.:-]{1,253}$", "default": "1.1.1.1" }
+      ],
+      "output": true,
+      "timeoutSec": 20
+    },
+    {
+      "id": "empty-bin",
+      "label": "Vaciar la papelera",
+      "icon": "delete",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-Command", "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
+      "confirm": "¿Vaciar la papelera del PC? No se puede deshacer.",
+      "output": true
+    },
+    {
+      "id": "downloads",
+      "label": "Abrir Descargas",
+      "icon": "folder",
+      "open": "shell:Downloads"
+    },
+    {
+      "id": "task-manager",
+      "label": "Administrador de tareas",
+      "icon": "monitoring",
+      "run": "taskmgr.exe"
+    }
+  ]
+}

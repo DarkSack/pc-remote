@@ -1,0 +1,40 @@
+{
+  "name": "Captura de pantalla",
+  "description": "Guarda una captura en Imágenes\\PC Remote. Descárgala después desde Archivos.",
+  "icon": "screenshot",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "capturar",
+      "label": "Hacer una captura",
+      "icon": "screenshot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "captura.ps1", "{que}"],
+      "params": [
+        { "id": "que", "label": "Qué capturar", "type": "choice",
+          "options": ["Todas las pantallas", "Pantalla principal"], "default": "Todas las pantallas" }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "ultimas",
+      "label": "Ver las últimas capturas",
+      "icon": "screenshot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "captura.ps1", "lista"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "carpeta",
+      "label": "Abrir la carpeta en el PC",
+      "icon": "folder",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "captura.ps1", "abrir"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

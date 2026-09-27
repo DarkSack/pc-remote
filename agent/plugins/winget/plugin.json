@@ -1,0 +1,89 @@
+{
+  "name": "Apps (winget)",
+  "description": "Buscar, instalar, actualizar y desinstalar programas con winget. Algunos instaladores piden permiso de administrador en el PC.",
+  "icon": "apps",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "actualizables",
+      "label": "Ver apps con actualización",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "actualizables"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 120
+    },
+    {
+      "id": "actualizar-todo",
+      "label": "Actualizar todas las apps",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "actualizar-todo"],
+      "confirm": "¿Actualizar todas las apps que tengan actualización? Puede tardar varios minutos y algunas se cerrarán.",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 600
+    },
+    {
+      "id": "buscar",
+      "label": "Buscar una app",
+      "icon": "search",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "buscar", "{texto}"],
+      "params": [
+        { "id": "texto", "label": "Nombre", "type": "string", "placeholder": "vlc, discord, 7zip…",
+          "pattern": "[A-Za-z0-9][A-Za-z0-9 .+_-]{0,63}", "maxLength": 64 }
+      ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 90
+    },
+    {
+      "id": "instalar",
+      "label": "Instalar una app",
+      "description": "Con el Id que aparece en «Buscar una app» (p. ej. VideoLAN.VLC).",
+      "icon": "download",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "instalar", "{id}"],
+      "params": [
+        { "id": "id", "label": "Id del paquete", "type": "string", "placeholder": "VideoLAN.VLC",
+          "pattern": "[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}", "maxLength": 128 }
+      ],
+      "confirm": "¿Instalar {id} en el PC?",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 600
+    },
+    {
+      "id": "actualizar",
+      "label": "Actualizar una app",
+      "icon": "system_update",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "actualizar", "{id}"],
+      "params": [
+        { "id": "id", "label": "Id del paquete", "type": "string",
+          "pattern": "[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}", "maxLength": 128 }
+      ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 600
+    },
+    {
+      "id": "desinstalar",
+      "label": "Desinstalar una app",
+      "icon": "delete",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "winget.ps1", "desinstalar", "{id}"],
+      "params": [
+        { "id": "id", "label": "Id del paquete", "type": "string",
+          "pattern": "[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}", "maxLength": 128 }
+      ],
+      "confirm": "¿Desinstalar {id} del PC?",
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 600
+    }
+  ]
+}

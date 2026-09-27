@@ -1,0 +1,58 @@
+{
+  "name": "Wi-Fi",
+  "description": "Redes guardadas y cercanas, ver la contraseña de una red guardada y conectarse.",
+  "icon": "wifi",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "estado",
+      "label": "Conexión actual",
+      "icon": "wifi",
+      "run": "netsh.exe",
+      "args": ["wlan", "show", "interfaces"],
+      "output": true
+    },
+    {
+      "id": "guardadas",
+      "label": "Redes guardadas",
+      "icon": "wifi",
+      "run": "netsh.exe",
+      "args": ["wlan", "show", "profiles"],
+      "output": true
+    },
+    {
+      "id": "cercanas",
+      "label": "Redes cercanas",
+      "icon": "wifi",
+      "run": "netsh.exe",
+      "args": ["wlan", "show", "networks", "mode=bssid"],
+      "output": true
+    },
+    {
+      "id": "contrasena",
+      "label": "Ver la contraseña de una red",
+      "description": "De una red guardada en este PC.",
+      "icon": "wifi",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "clave.ps1", "{red}"],
+      "params": [
+        { "id": "red", "label": "Nombre de la red (SSID)", "type": "string", "pattern": "[^\"]{1,32}", "maxLength": 32 }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "conectar",
+      "label": "Conectarse a una red guardada",
+      "icon": "wifi",
+      "run": "netsh.exe",
+      "args": ["wlan", "connect", "name={red}"],
+      "params": [
+        { "id": "red", "label": "Nombre de la red (SSID)", "type": "string", "pattern": "[^\"]{1,32}", "maxLength": 32 }
+      ],
+      "confirm": "¿Conectar el PC a «{red}»? Si el móvil no está en esa red, se perderá la conexión con PC Remote.",
+      "output": true
+    }
+  ]
+}

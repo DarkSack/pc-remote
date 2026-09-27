@@ -1,0 +1,51 @@
+{
+  "name": "Bluetooth",
+  "description": "Encender o apagar el Bluetooth del PC y ver los dispositivos emparejados.",
+  "icon": "bluetooth",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "estado",
+      "label": "Estado",
+      "icon": "bluetooth",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "bluetooth.ps1", "estado"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "encender",
+      "label": "Encender",
+      "icon": "bluetooth",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "bluetooth.ps1", "encender"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "apagar",
+      "label": "Apagar",
+      "icon": "bluetooth",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "bluetooth.ps1", "apagar"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "dispositivos",
+      "label": "Dispositivos emparejados",
+      "icon": "bluetooth",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "bluetooth.ps1", "dispositivos"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "configuracion",
+      "label": "Abrir la configuración de Bluetooth",
+      "icon": "settings",
+      "open": "ms-settings:bluetooth"
+    }
+  ]
+}

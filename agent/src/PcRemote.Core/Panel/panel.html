@@ -385,7 +385,12 @@ async function refreshConns() {
 }
 
 // ── Funciones y plugins ─────────────────────────────────
-const ICONS = { terminal: ">_", folder: "▤", build: "⚒", extension: "◆" };
+const ICONS = {
+  terminal: ">_", folder: "▤", build: "⚒", extension: "◆", desktop_windows: "▭", battery: "▮",
+  timer: "◷", headphones: "♫", wifi: "◠", public: "◍", cleaning: "✧", storage: "▤", screenshot: "⬚",
+  system_update: "↻", apps: "▦", browser: "◳", notifications: "◉", palette: "◐", security: "⛨",
+  troubleshoot: "⚕", bluetooth: "ᛒ", print: "⎙", settings: "⚙", games: "◈", note: "✎", search: "⌕",
+};
 
 function toggle(key, enabled, label) {
   return `<label class="switch" title="${enabled ? "Desactivar" : "Activar"} ${esc(label)}">

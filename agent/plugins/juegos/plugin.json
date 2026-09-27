@@ -1,0 +1,17 @@
+{
+  "name": "Juegos",
+  "description": "Abrir Steam (Big Picture, biblioteca, descargas), Epic Games y la configuración de juego de Windows.",
+  "icon": "games",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    { "id": "steam-big-picture", "label": "Steam Big Picture",  "icon": "games",    "open": "steam://open/bigpicture" },
+    { "id": "steam-biblioteca",  "label": "Biblioteca de Steam", "icon": "games",   "open": "steam://open/games" },
+    { "id": "steam-descargas",   "label": "Descargas de Steam", "icon": "download", "open": "steam://open/downloads" },
+    { "id": "steam-amigos",      "label": "Amigos de Steam",    "icon": "games",    "open": "steam://open/friends" },
+    { "id": "steam-cerrar",      "label": "Cerrar Steam",       "icon": "games",    "open": "steam://exit" },
+    { "id": "epic",              "label": "Epic Games Launcher", "icon": "games",   "open": "com.epicgames.launcher://store" },
+    { "id": "modo-juego",        "label": "Modo de juego de Windows", "icon": "settings", "open": "ms-settings:gaming-gamemode" },
+    { "id": "graficos",          "label": "Gráficos por aplicación",  "icon": "settings", "open": "ms-settings:display-advancedgraphics" }
+  ]
+}

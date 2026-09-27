@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Panel\panel.html" />
+    <!-- The plugins that ship with the agent (agent/plugins): copied to the plugins folder on start. -->
+    <EmbeddedResource Include="..\..\plugins\**\*" LogicalName="bundled/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="PcRemote.Tests" />

@@ -1,0 +1,56 @@
+{
+  "name": "Pantalla",
+  "description": "Apagar el monitor, brillo (portátil y monitores DDC/CI) y modo de proyección.",
+  "icon": "desktop_windows",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "apagar-monitor",
+      "label": "Apagar la pantalla",
+      "description": "Se enciende al mover el ratón o pulsar una tecla.",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "apagar.ps1"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "brillo",
+      "label": "Cambiar el brillo",
+      "icon": "brightness",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "brillo.ps1", "{nivel}"],
+      "params": [
+        { "id": "nivel", "label": "Brillo (%)", "type": "number", "min": 0, "max": 100, "default": 50 }
+      ],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 30
+    },
+    {
+      "id": "ver-brillo",
+      "label": "Ver el brillo",
+      "icon": "brightness",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "brillo.ps1"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 30
+    },
+    {
+      "id": "proyeccion",
+      "label": "Modo de proyección",
+      "description": "Lo mismo que Win+P.",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "proyeccion.ps1", "{modo}"],
+      "params": [
+        { "id": "modo", "label": "Modo", "type": "choice",
+          "options": ["Extender", "Duplicar", "Solo pantalla del PC", "Solo segunda pantalla"], "default": "Extender" }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

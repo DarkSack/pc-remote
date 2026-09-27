@@ -1,0 +1,62 @@
+{
+  "name": "Energía y batería",
+  "description": "Plan de energía, estado de la batería y mantener el PC despierto un rato.",
+  "icon": "battery",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "ver-plan",
+      "label": "Ver el plan de energía",
+      "icon": "battery",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "plan.ps1"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "cambiar-plan",
+      "label": "Cambiar el plan de energía",
+      "icon": "battery",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "plan.ps1", "{plan}"],
+      "params": [
+        { "id": "plan", "label": "Plan", "type": "choice",
+          "options": ["Equilibrado", "Alto rendimiento", "Economizador"], "default": "Equilibrado" }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "bateria",
+      "label": "Estado de la batería",
+      "icon": "battery",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "bateria.ps1"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "despierto",
+      "label": "Mantener despierto",
+      "description": "Ni suspensión ni pantalla apagada durante el tiempo elegido (descargas, renders…).",
+      "icon": "timer",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "despierto.ps1", "{minutos}"],
+      "params": [
+        { "id": "minutos", "label": "Minutos", "type": "number", "min": 1, "max": 1440, "default": 60 }
+      ],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "despierto-cancelar",
+      "label": "Dejar de mantener despierto",
+      "icon": "timer",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "despierto.ps1", "0"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

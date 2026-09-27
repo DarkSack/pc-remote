@@ -52,12 +52,41 @@ private fun symbol(name: String?): ImageVector = when (name?.lowercase()) {
     "settings" -> Icons.Outlined.Settings
     "wifi" -> Icons.Outlined.Wifi
     "volume", "volume_up" -> Icons.AutoMirrored.Outlined.VolumeUp
-    "screenshot", "image" -> Icons.Outlined.Image
+    "screenshot" -> Icons.Outlined.Screenshot
+    "image" -> Icons.Outlined.Image
     "code" -> Icons.Outlined.Code
     "games", "sports_esports" -> Icons.Outlined.SportsEsports
     "clipboard", "content_paste" -> Icons.Outlined.ContentPaste
+    "desktop_windows", "monitor", "display" -> Icons.Outlined.DesktopWindows
+    "brightness", "brightness_6" -> Icons.Outlined.Brightness6
+    "battery", "battery_full" -> Icons.Outlined.BatteryFull
+    "timer", "schedule" -> Icons.Outlined.Timer
+    "headphones", "speaker" -> Icons.Outlined.Headphones
+    "public", "language" -> Icons.Outlined.Public
+    "cleaning", "cleaning_services" -> Icons.Outlined.CleaningServices
+    "storage", "hard_drive" -> Icons.Outlined.Storage
+    "system_update", "update" -> Icons.Outlined.SystemUpdate
+    "apps" -> Icons.Outlined.Apps
+    "browser", "open_in_browser" -> Icons.Outlined.OpenInBrowser
+    "search" -> Icons.Outlined.Search
+    "music", "music_note" -> Icons.Outlined.MusicNote
+    "map" -> Icons.Outlined.Map
+    "notifications" -> Icons.Outlined.Notifications
+    "voice", "record_voice_over" -> Icons.Outlined.RecordVoiceOver
+    "palette" -> Icons.Outlined.Palette
+    "dark_mode" -> Icons.Outlined.DarkMode
+    "security", "shield" -> Icons.Outlined.Security
+    "troubleshoot", "bug_report" -> Icons.Outlined.BugReport
+    "bluetooth" -> Icons.Outlined.Bluetooth
+    "print" -> Icons.Outlined.Print
+    "note", "edit_note" -> Icons.Outlined.EditNote
     else -> Icons.Outlined.Extension
 }
+
+/** "{param}" in a confirmation text → the value typed for it. */
+private fun fillPlaceholders(text: String, values: Map<String, String>?): String =
+    if (values == null) text
+    else Regex("""\{([A-Za-z0-9_-]+)\}""").replace(text) { m -> values[m.groupValues[1]] ?: m.value }
 
 private data class Pending(val plugin: Plugin, val action: PluginAction, val values: Map<String, String>? = null)
 
@@ -195,7 +224,7 @@ fun PluginsScreen(vm: PcSession, back: () -> Unit) {
     askConfirm?.let { p ->
         ConfirmDialog(
             title = p.action.label,
-            text = p.action.confirm ?: "",
+            text = fillPlaceholders(p.action.confirm ?: "", p.values),
             confirmLabel = "Ejecutar",
             icon = symbol(p.action.icon),
             onConfirm = { execute(p) },

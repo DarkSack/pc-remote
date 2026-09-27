@@ -48,6 +48,7 @@ pc-remote/
 │   ├── PcRemote.Agent.slnx
 │   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
 │   ├── global.json
+│   ├── plugins/                          # 23 plugins incluidos (se copian desactivados a la carpeta de plugins)
 │   ├── src/
 │   │   ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
 │   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite, plugins, actividad
@@ -96,7 +97,7 @@ Aparece un icono en la bandeja. Desde él puedes abrir el **panel web** (`http:/
 
 Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI), `features.json` (funciones y plugins activados), `plugins/` y `logs/`.
 
-La **terminal** viene apagada y los **plugins** nuevos también: se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
+La **terminal** viene apagada y los **plugins** nuevos también (el agente trae 23, de pantalla, energía, audio, red, limpieza, winget…): se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
 
 Puertos por defecto (en `appsettings.json`):
 

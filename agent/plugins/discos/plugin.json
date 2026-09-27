@@ -1,0 +1,49 @@
+{
+  "name": "Discos",
+  "description": "Espacio libre, salud de los discos y qué carpetas ocupan más.",
+  "icon": "storage",
+  "version": "1.0.0",
+  "author": "PC Remote",
+  "actions": [
+    {
+      "id": "espacio",
+      "label": "Espacio libre",
+      "icon": "storage",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "discos.ps1", "espacio"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "salud",
+      "label": "Salud de los discos",
+      "icon": "storage",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "discos.ps1", "salud"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "carpetas",
+      "label": "Carpetas más pesadas",
+      "description": "Las carpetas de tu usuario, de mayor a menor. Puede tardar un poco.",
+      "icon": "folder",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "discos.ps1", "carpetas"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 300
+    },
+    {
+      "id": "archivos-grandes",
+      "label": "Archivos más grandes",
+      "description": "Los 25 archivos más grandes de tu usuario (sin AppData).",
+      "icon": "storage",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "discos.ps1", "grandes"],
+      "output": true,
+      "encoding": "utf8",
+      "timeoutSec": 300
+    }
+  ]
+}
