@@ -41,11 +41,16 @@ Conexión:
 - Al volver a la app comprueba que el socket siga vivo (ping) y, si no,
   reconecta **al momento**, sin esperar el backoff. Un latido cada 5 s detecta
   conexiones medio abiertas (Wi-Fi que se durmió, PC suspendido).
-- Tras dos fallos busca el PC por mDNS (por la huella del certificado) y, si
-  cambió de IP, se mueve solo a la nueva.
+- Tras dos fallos busca el PC por la huella de su certificado: primero por
+  mDNS y, si no aparece en otra dirección, recorriendo la subred del móvil
+  (como mucho cada 2 min, o al pulsar «Reintentar»). Si cambió de IP, se
+  mueve solo a la nueva.
+- Si en la dirección guardada contesta **otro** PC (otro certificado), también
+  busca el suyo antes de rendirse.
 - Errores legibles («El PC no respondió — ¿está encendido y con PC Remote
   abierto?») con el detalle técnico tras «Ver detalles».
-- No reintenta si el PC revocó el móvil o cambió de certificado.
+- No reintenta si el PC revocó el móvil, ni si cambió de certificado y no
+  aparece en ninguna otra dirección.
 - Con la app en segundo plano la conexión dura 30 s y luego se cierra.
 
 ⚠️ Compila y los tests de lógica pasan, pero **no se ha probado aún en un móvil

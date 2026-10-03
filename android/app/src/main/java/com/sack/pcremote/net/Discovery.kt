@@ -98,15 +98,20 @@ class Discovery(private val context: Context) {
         }
 
     /**
-     * Prefers IPv4. The agent answers mDNS with A and AAAA records, and the first
-     * address Android hands back can be an IPv6 link-local one ("fe80::…%wlan0"):
-     * it needs a scope id that URLs cannot carry, so connecting to it fails.
+     * Prefers an IPv4 on the phone's own subnet, then any IPv4. Agents before 0.5
+     * announce every address of the PC — WSL, Hyper-V and Docker adapters
+     * included — and the first IPv4 may be one the phone cannot reach. An IPv6
+     * link-local one ("fe80::…%wlan0") is worst: it needs a scope id that URLs
+     * cannot carry.
      */
     @Suppress("DEPRECATION")
     private fun pickAddress(info: NsdServiceInfo): InetAddress? {
         val all: List<InetAddress> =
             if (Build.VERSION.SDK_INT >= 34) info.hostAddresses else listOfNotNull(info.host)
-        return all.firstOrNull { it is Inet4Address } ?: all.firstOrNull { !it.isLinkLocalAddress } ?: all.firstOrNull()
+        return all.firstOrNull { LanScan.sameSubnet(context, it) }
+            ?: all.firstOrNull { it is Inet4Address }
+            ?: all.firstOrNull { !it.isLinkLocalAddress }
+            ?: all.firstOrNull()
     }
 
     companion object {

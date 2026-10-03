@@ -35,13 +35,18 @@ import kotlinx.serialization.json.put
 //   - onForeground(): cancela el cierre diferido y comprueba que el
 //     socket siga vivo (ensureAlive) o reintenta ya, sin esperar backoff.
 //   - onBackground(): cierra la conexión tras 30 s en segundo plano.
-//   - Si falla dos veces seguidas, busca el PC por mDNS (por la huella
-//     de su certificado): si cambió de IP, guarda la nueva y reconecta.
+//   - Si falla dos veces seguidas, busca el PC por la huella de su
+//     certificado: primero por mDNS y, si no aparece en otra dirección,
+//     recorriendo la subred del móvil (LanScan). Si cambió de IP, guarda
+//     la nueva y reconecta.
 //   - Red de vuelta (Wi-Fi) → reintento inmediato.
 // ══════════════════════════════════════════════════════════════
 
 /** How long the PC connection survives with the app in the background. */
 private const val BACKGROUND_GRACE_MS = 30_000L
+
+/** Minimum gap between automatic subnet scans while the PC cannot be reached. */
+private const val SCAN_EVERY_MS = 120_000L
 
 /** Samples kept for the charts: 10 minutes at one every 2 s. */
 const val HISTORY_SIZE = 300
@@ -133,7 +138,7 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
     fun retry() {
         _messages.tryEmit("Reintentando…")
         client?.retryNow() ?: return
-        if (rediscovery?.isActive != true) rediscover()
+        if (rediscovery?.isActive != true) rediscover(forceScan = true)
     }
 
     override fun onCleared() {
@@ -151,6 +156,11 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
         if (s != ConnectionState.CONNECTED) {
             if (wasConnected && s == ConnectionState.RECONNECTING) {
                 addLocal("connection", "Conexión perdida", c.error.value?.title, "warning")
+            }
+            // Another PC answers at our saved address: ours probably moved. Look for it
+            // by fingerprint; only if it turns up elsewhere does the client try again.
+            if (s == ConnectionState.FAILED && c.error.value?.otherCertificate == true && rediscovery?.isActive != true) {
+                rediscover(forceScan = true)
             }
             wasConnected = false
             return
@@ -223,25 +233,39 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
     /**
      * The saved address stopped working: look for the PC by its certificate
      * fingerprint (never by name, trivial to fake) and move to where it is now.
+     * First mDNS; if it does not see the PC at a new address (multicast filtered
+     * by the router, or an agent still announcing the old IP), scan the subnet.
      */
-    private fun rediscover() {
+    private var lastScanAt = 0L
+
+    private fun rediscover(forceScan: Boolean = false) {
         val c = client ?: return
         val fp = _creds.value?.certFingerprintHex ?: return
         rediscovery = viewModelScope.launch {
             _searching.value = true
             try {
-                val found = withTimeoutOrNull(15_000) {
-                    deps.discovery.scan().first { it.fingerprint?.equals(fp, ignoreCase = true) == true }
+                val cur = store.load(deviceId) ?: return@launch
+                val viaMdns = withTimeoutOrNull(8_000) {
+                    deps.discovery.scan().first {
+                        it.fingerprint?.equals(fp, ignoreCase = true) == true &&
+                            (it.host != cur.agentHost || it.port != cur.agentPort)
+                    }
                 }
-                val cur = store.load(deviceId)
-                if (found != null && cur != null && (found.host != cur.agentHost || found.port != cur.agentPort)) {
-                    Log.i("PcSession", "PC moved to ${found.host}:${found.port}")
-                    val updated = cur.copy(agentHost = found.host, agentPort = found.port)
-                    store.save(updated)
-                    _creds.value = updated
-                    addLocal("connection", "El PC cambió de dirección", "${found.host}:${found.port}", "info")
-                    c.updateAddress(found.host, found.port)
-                }
+                // The scan opens ~250 sockets: with the PC simply off it would repeat on
+                // every backoff step, so at most once every 2 minutes (or when asked).
+                val scanned = if (viaMdns == null && (forceScan || System.currentTimeMillis() - lastScanAt > SCAN_EVERY_MS)) {
+                    lastScanAt = System.currentTimeMillis()
+                    LanScan.find(getApplication(), cur.agentPort, fp, skip = cur.agentHost)
+                } else null
+                val (host, port) = viaMdns?.let { it.host to it.port }
+                    ?: scanned?.let { it to cur.agentPort }
+                    ?: return@launch
+                Log.i("PcSession", "PC moved to $host:$port (${if (viaMdns != null) "mDNS" else "scan"})")
+                val updated = cur.copy(agentHost = host, agentPort = port)
+                store.save(updated)
+                _creds.value = updated
+                addLocal("connection", "El PC cambió de dirección", "$host:$port", "info")
+                c.updateAddress(host, port)
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.w("PcSession", "Rediscovery failed", t)

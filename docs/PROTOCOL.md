@@ -167,6 +167,16 @@ Servicio `_pcremote._tcp`, puerto WSS. Registros TXT: `hostname`, `os`,
 `version` y `fp` (SHA-256 del certificado TLS). La app usa `fp` para reconocer un
 PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 
+El agente anuncia **solo** la IPv4 de la LAN (la del adaptador con puerta de
+enlace, la misma del QR), no las de WSL, Hyper-V, Docker o VPN. Cuando esa IP
+cambia (DHCP, otra Wi-Fi, cable), se despide del anuncio viejo (TTL 0) y
+anuncia el nuevo en unos 3 s, sin reiniciar el agente.
+
+Si mDNS no encuentra el PC en otra dirección (routers que filtran multicast), la
+app recorre su propia subred (/24 como máximo) probando el puerto del agente y
+se queda con la IP cuyo certificado tiene la huella `fp` guardada. Nunca acepta
+otra.
+
 ### `clipboard`
 
 | Action | Kind | Params | Data |

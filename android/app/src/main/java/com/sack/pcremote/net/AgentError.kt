@@ -20,6 +20,11 @@ data class AgentError(
     val technical: String? = null,
     /** True when retrying cannot help until something changes (revoked, other certificate). */
     val permanent: Boolean = false,
+    /**
+     * Another certificate at the saved address: maybe not an impostor but another PC
+     * that got this IP after ours moved. The session looks for ours by fingerprint.
+     */
+    val otherCertificate: Boolean = false,
 ) {
     companion object {
         fun from(t: Throwable): AgentError {
@@ -32,7 +37,7 @@ data class AgentError(
                 has(CertificateMismatchException::class.java) -> AgentError(
                     "Certificado distinto",
                     "El PC presenta un certificado diferente al emparejado. Si reinstalaste el agente, vuelve a emparejar.",
-                    tech, permanent = true,
+                    tech, permanent = true, otherCertificate = true,
                 )
                 has(UnknownHostException::class.java) -> AgentError(
                     "No se encuentra el PC",
