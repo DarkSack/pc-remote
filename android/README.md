@@ -95,8 +95,37 @@ certificados de Windows:
 $env:JAVA_TOOL_OPTIONS = "-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT -Djavax.net.ssl.trustStore=NUL"
 ```
 
-El APK queda en `app/build/outputs/apk/<debug|release>/`. El de release va
-firmado con el keystore de debug.
+El APK queda en `app/build/outputs/apk/<debug|release>/`.
+
+### Firma de release
+
+El APK de release se firma con la clave propia de PC Remote, que **no está en
+el repositorio**. Gradle la busca en `android/keystore.properties` (ignorado por
+git):
+
+```properties
+storeFile=C:/Users/<tú>/.android-keys/pcremote-release.jks
+storePassword=…
+keyAlias=pcremote
+keyPassword=…
+```
+
+o, para una CI, en las variables `PCREMOTE_KEYSTORE`,
+`PCREMOTE_KEYSTORE_PASSWORD` (y opcionalmente `PCREMOTE_KEY_ALIAS`,
+`PCREMOTE_KEY_PASSWORD`). Sin ninguna de las dos, el release se firma con la
+clave de depuración y Gradle lo avisa: ese APK **no** puede instalarse encima
+de uno firmado con la clave propia.
+
+Guarda una copia del `.jks` y de `keystore.properties` fuera del PC (gestor
+de contraseñas, USB…). Si se pierden, las actualizaciones de la app ya
+instalada son imposibles: habría que desinstalarla y volver a emparejar.
+
+Para crear una clave nueva (solo la primera vez):
+
+```powershell
+keytool -genkeypair -keystore $HOME\.android-keys\pcremote-release.jks -storetype PKCS12 `
+  -alias pcremote -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=PC Remote, O=DarkSack"
+```
 
 ## Debug con logcat
 

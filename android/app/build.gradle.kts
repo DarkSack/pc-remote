@@ -1,7 +1,28 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Release signing key: android/keystore.properties (git-ignored), or the
+// PCREMOTE_KEYSTORE* environment variables for a CI. Without either, release
+// builds fall back to the debug key so a fresh clone still builds — but that
+// APK cannot update one signed with the real key.
+val releaseKey: Map<String, String>? = run {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) {
+        val p = Properties().apply { file.inputStream().use(::load) }
+        listOf("storeFile", "storePassword", "keyAlias", "keyPassword").associateWith { p.getProperty(it).orEmpty() }
+    } else System.getenv("PCREMOTE_KEYSTORE")?.let { path ->
+        mapOf(
+            "storeFile" to path,
+            "storePassword" to System.getenv("PCREMOTE_KEYSTORE_PASSWORD").orEmpty(),
+            "keyAlias" to (System.getenv("PCREMOTE_KEY_ALIAS") ?: "pcremote"),
+            "keyPassword" to (System.getenv("PCREMOTE_KEY_PASSWORD") ?: System.getenv("PCREMOTE_KEYSTORE_PASSWORD").orEmpty()),
+        )
+    }
 }
 
 android {
@@ -19,11 +40,27 @@ android {
         versionName = "0.4.0"
     }
 
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = file(releaseKey.getValue("storeFile"))
+                storePassword = releaseKey.getValue("storePassword")
+                keyAlias = releaseKey.getValue("keyAlias")
+                keyPassword = releaseKey.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false   // keep off until we validate proguard rules
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")   // self-sign for now
+            signingConfig = if (releaseKey != null) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("PC Remote: sin keystore.properties ni PCREMOTE_KEYSTORE; el APK de release se firma con la clave de depuración.")
+                signingConfigs.getByName("debug")
+            }
         }
         debug {
             isDebuggable = true

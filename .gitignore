@@ -26,6 +26,10 @@ yarn-error.log*
 !.env.example
 *.pfx
 !agent/certs/example.pfx
+# Firma de release de la app (ver android/README.md)
+keystore.properties
+*.jks
+*.keystore
 
 # OS
 .DS_Store

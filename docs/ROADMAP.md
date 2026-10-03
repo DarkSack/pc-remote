@@ -53,7 +53,7 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
       no hace falta `pair_init`.
 - [x] Probar todo lo anterior en un móvil real.
 - [x] Borrar `mobile/` después de esa prueba.
-- [ ] Firmar el APK con un keystore propio.
+- [x] Firmar el APK con un keystore propio (fuera del repo; ver `android/README.md`).
 
 ## Fase 6 · Extras
 
