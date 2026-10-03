@@ -7,8 +7,6 @@ Monorepo con dos partes:
 - **`agent/`** — aplicación de bandeja para Windows en **.NET 10** (C#). Expone un WebSocket seguro (`wss://`), se anuncia por mDNS, ejecuta los comandos y sirve un panel web de administración en `localhost`.
 - **`android/`** — app nativa en **Kotlin + Jetpack Compose**.
 
-`mobile/` es la primera versión del cliente (React Native + Expo). Está **deprecada**: sufría cierres opacos en release y se sustituyó por `android/`. Se conserva como referencia hasta que la app Kotlin tenga todas sus pantallas.
-
 Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, descubrimiento por mDNS y autenticación Ed25519 por dispositivo.
 
 ---
@@ -64,8 +62,7 @@ pc-remote/
 │   │   ├── PcRemote.Modules.Files/       # explorar, abrir, subir y bajar (opcional)
 │   │   └── PcRemote.Modules.Terminal/    # PowerShell (opcional, apagada por defecto)
 │   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
-├── android/                              # Kotlin + Compose
-└── mobile/                               # DEPRECADO (React Native)
+└── android/                              # Kotlin + Compose
 ```
 
 ---
