@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,7 +32,7 @@ private enum class ControlTab(val label: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ControlScreen(vm: PcSession) {
+fun ControlScreen(vm: PcSession, openScreen: () -> Unit) {
     val client = vm.client ?: return
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(ControlTab.Mouse) }
@@ -41,7 +42,18 @@ fun ControlScreen(vm: PcSession) {
         topBar = {
             TopAppBar(
                 title = { Text("Control") },
-                actions = { ConnectionBadge(state, Modifier.padding(end = 16.dp)) },
+                actions = {
+                    FilledTonalButton(
+                        onClick = { haptics.tick(); openScreen() },
+                        enabled = state == com.sack.pcremote.net.ConnectionState.CONNECTED,
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.ScreenShare, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Ver pantalla")
+                    }
+                    ConnectionBadge(state, Modifier.padding(end = 16.dp))
+                },
             )
         },
     ) { padding ->

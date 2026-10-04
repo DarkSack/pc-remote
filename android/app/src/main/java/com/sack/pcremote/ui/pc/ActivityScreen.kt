@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,7 +34,7 @@ import java.util.Calendar
 private enum class ActivityFilter(val label: String, val types: Set<String>?) {
     All("Todo", null),
     Alerts("Alertas", setOf("alert")),
-    Connection("Conexiones", setOf("connection")),
+    Connection("Conexiones", setOf("connection", "screen")),
     Power("Energía", setOf("power", "agent")),
     Actions("Acciones", setOf("app", "process", "plugin", "terminal", "files", "clipboard")),
 }
@@ -47,6 +48,7 @@ private fun iconFor(type: String): ImageVector = when (type) {
     "process" -> Icons.Outlined.Memory
     "plugin" -> Icons.Outlined.Extension
     "terminal" -> Icons.Outlined.Terminal
+    "screen" -> Icons.AutoMirrored.Outlined.ScreenShare
     "files" -> Icons.Outlined.Folder
     "clipboard" -> Icons.Outlined.ContentPaste
     else -> Icons.Outlined.Info

@@ -22,7 +22,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _connectionsItem;
     private readonly ToolStripMenuItem _devicesItem;
+    private readonly ToolStripMenuItem _screenItem;
     private readonly SynchronizationContext _uiCtx;
+    private int _screenViewers;
 
     public TrayApplicationContext(IServiceProvider services, Action onExit)
     {
@@ -39,6 +41,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusItem      = new ToolStripMenuItem { Enabled = false };
         _connectionsItem = new ToolStripMenuItem { Enabled = false };
         _devicesItem     = new ToolStripMenuItem { Enabled = false };
+        _screenItem      = new ToolStripMenuItem { Visible = false, ForeColor = Color.DarkRed };
+        _screenItem.Click += (_, _) => _ = connections.ClosePurposeAsync("screen", "Stopped on the PC");
 
         _notifyIcon = new NotifyIcon
         {
@@ -51,7 +55,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.ContextMenuStrip = BuildMenu(settings, certificate, devices);
 
         connections.ConnectionsChanged += (_, _) => Post(() =>
-            RebuildStatus(settings, certificate, connections, devices));
+        {
+            RebuildStatus(settings, certificate, connections, devices);
+            NotifyScreenShare(connections, devices);
+        });
 
         pairing.CodeIssued += (_, code) => Post(() => ShowPairCode(code));
 
@@ -71,6 +78,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ToolTipIcon.Warning);
     }
 
+    /// <summary>
+    /// Someone starting to watch the screen must never go unnoticed: a balloon when
+    /// it starts, and a red menu entry (which stops it) while it lasts.
+    /// </summary>
+    private void NotifyScreenShare(ConnectionManager cm, DeviceRepository devices)
+    {
+        var viewers = cm.Active.Where(c => c.Purpose == "screen" && c.DeviceId is not null).ToList();
+        var names = viewers.Select(c => devices.Get(c.DeviceId!)?.Name ?? "A device").Distinct().ToList();
+
+        _screenItem.Visible = viewers.Count > 0;
+        _screenItem.Text = $"Screen shared with {string.Join(", ", names)} — click to stop";
+
+        if (viewers.Count > _screenViewers)
+        {
+            _notifyIcon.ShowBalloonTip(5000, "PC Remote — screen shared",
+                $"{string.Join(", ", names)} is watching and can control this PC. Right-click the tray icon to stop it.",
+                ToolTipIcon.Warning);
+        }
+        _screenViewers = viewers.Count;
+    }
+
     private void RebuildStatus(AgentSettings s, X509Certificate2 cert, ConnectionManager cm, DeviceRepository devices)
     {
         var ip          = GetPrimaryIp();
@@ -82,7 +110,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusItem.Text      = $"Listening: wss://{ip}:{s.WebSocket.Port}";
         _connectionsItem.Text = $"Active connections: {active}";
         _devicesItem.Text     = $"Paired devices: {deviceCount}";
-        _notifyIcon.Text      = $"PC Remote · {active} conn · {deviceCount} devices · cert {shortPrint}…";
+        var screen            = cm.ScreenViewers > 0 ? " · SCREEN SHARED" : "";
+        // NotifyIcon.Text is capped at 127 characters.
+        var tip               = $"PC Remote · {active} conn · {deviceCount} devices{screen} · cert {shortPrint}…";
+        _notifyIcon.Text      = tip.Length > 127 ? tip[..127] : tip;
     }
 
     private ContextMenuStrip BuildMenu(AgentSettings settings, X509Certificate2 cert, DeviceRepository devices)
@@ -92,6 +123,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_statusItem);
         menu.Items.Add(_connectionsItem);
         menu.Items.Add(_devicesItem);
+        menu.Items.Add(_screenItem);
         menu.Items.Add(new ToolStripSeparator());
 
         var fingerprintItem = new ToolStripMenuItem("Copy cert fingerprint");

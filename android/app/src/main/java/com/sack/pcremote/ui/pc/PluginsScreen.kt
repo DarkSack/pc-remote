@@ -39,6 +39,7 @@ import kotlinx.serialization.json.*
 /** Material Symbols names used in plugin.json → the closest bundled icon. */
 private fun symbol(name: String?): ImageVector = when (name?.lowercase()) {
     "terminal" -> Icons.Outlined.Terminal
+    "screen", "screen_share" -> Icons.AutoMirrored.Outlined.ScreenShare
     "folder", "folder_open" -> Icons.Outlined.Folder
     "lan", "network" -> Icons.Outlined.Lan
     "dns" -> Icons.Outlined.Dns

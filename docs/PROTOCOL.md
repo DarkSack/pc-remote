@@ -88,6 +88,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | 1008 | Autenticación fallida, más de 20 mensajes sin autenticar, o sin autenticar tras `CodeTtlSeconds` + 60 s (180 s por defecto). |
 | 1009 | Frame demasiado grande: 16 KB antes de autenticar, 4 MB después. |
 | 4001 | Dispositivo revocado o borrado (en caliente o al intentar autenticar). **El cliente no debe reconectar.** |
+| 4002 | (Sockets de módulo) La sesión de control de la que salió el ticket terminó. El cliente puede pedir otro ticket al reconectar. |
 
 ## Códigos de error
 
@@ -285,6 +286,80 @@ Función opcional, **desactivada por defecto**.
 
 Cada comando es un `powershell.exe -NoProfile -NonInteractive` nuevo, sin perfil
 y con el mismo usuario que el agente. Salida máx. ~1 M caracteres por comando.
+
+### `screen`
+
+Pantalla remota: ver el PC y controlarlo, al estilo de RustDesk en la LAN.
+Función opcional, **activada por defecto** (se apaga en el panel). Mientras
+alguien mira, la bandeja del PC lo avisa y permite cortarlo.
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `displays` | request | — | `{ displays: [Display] }`, de izquierda a derecha |
+| `open` | request | — | `{ ticket, path: "/socket/screen", expiresInSec }` |
+
+`Display` = `{ index, id, name, x, y, width, height, primary }`, en píxeles
+físicos del escritorio virtual.
+
+#### Socket de pantalla (`/socket/screen`)
+
+El vídeo va por **su propio socket**, para que las respuestas a comandos nunca
+esperen detrás de un fotograma:
+
+1. `screen.open` por el socket de control (ya autenticado) → `ticket`.
+   Un ticket vale **una vez**, para este módulo, durante 30 s.
+2. `wss://pc:47820/socket/screen` con el mismo certificado fijado. Primer
+   mensaje (texto, ≤ 4 KB, en ≤ 10 s): `{ ticket, quality?, display? }`.
+   `quality` = `speed` (30 fps, ~3 Mbps a 1080p) · `balanced` (60 fps, ~6 Mbps)
+   · `quality` (60 fps, ~12 Mbps, sin reducir monitores 4K).
+3. El PC cierra con 1008 si el ticket no vale, y con 4001/4002 si se revoca el
+   móvil o termina su sesión de control.
+
+**PC → móvil, texto (JSON):**
+
+| `kind` | Contenido |
+|---|---|
+| `config` | `{ codec: "h264", width, height, sourceWidth, sourceHeight, display, displays, encoder, hardware, fps, quality }`. Llega al empezar y cada vez que cambia el codificador (otra pantalla, otra calidad, otra resolución): el cliente debe **recrear el decodificador** |
+| `status` | `{ state: "ok" \| "blocked", message? }`. `blocked` = escritorio seguro (UAC, bloqueo, Ctrl+Alt+Supr), que Windows no deja capturar |
+| `stats` | Cada segundo: `{ fps, kbps, bitrateKbps, encodeMs, queued }` |
+| `pong` | `{ ts }` (eco del `ping`) |
+| `error` | `{ message }` y el PC cierra (sin códec H.264, captura imposible…) |
+
+**PC → móvil, binario (big-endian):**
+
+| Byte 0 | Formato |
+|---|---|
+| `0x01` vídeo | `[1]` flags (bit 0 = fotograma clave) · `[2..9]` instante de captura en µs · H.264 Annex B. Cada fotograma clave lleva SPS y PPS |
+| `0x02` cursor | `[1]` visible · `[2..3]` x · `[4..5]` y, en píxeles del monitor (`sourceWidth`) |
+| `0x03` forma | `[2..3]` ancho · `[4..5]` alto · `[6..7]` punto activo x · `[8..9]` y · RGBA por filas |
+
+**Móvil → PC, texto (JSON, campo `t`):**
+
+| `t` | Campos | Efecto |
+|---|---|---|
+| `mv` | `x, y` (0..1 del monitor) | Mover el cursor |
+| `btn` | `b: left\|right\|middle, d: bool` | Pulsar / soltar |
+| `wheel` | `dy?, dx?` | Rueda en unidades de 120 por muesca (positivo = arriba / derecha) |
+| `keys` | `k` | Combinación (`"ctrl+shift+esc"`, mismos nombres que `input.keyPress`) |
+| `key` | `k, d` | Mantener / soltar una tecla (modificadores) |
+| `text` | `s` (≤ 4096) | Escribir Unicode |
+| `kf` | — | Pedir un fotograma clave (decodificador nuevo o con errores) |
+| `display` | `i` | Cambiar de monitor |
+| `quality` | `q` | Cambiar de calidad |
+| `ping` | `ts` | El PC responde `pong` |
+
+Al cerrar el socket se sueltan los botones y teclas que el móvil dejó pulsados.
+
+Control de flujo: como mucho 2 fotogramas esperan al socket. Si la red no da
+abasto, el PC salta fotogramas (codifica el último cuando hay sitio) y baja el
+bitrate un 30 %; lo sube un 15 % cada 4 s sin problemas, hasta el de la calidad
+elegida. Los fotogramas ya codificados nunca se tiran: cada uno depende del
+anterior.
+
+Captura: DXGI Desktop Duplication. Codificación: H.264 por la GPU (AMD AMF,
+NVIDIA NVENC, Intel Quick Sync) vía Media Foundation, o el codificador por
+software de Windows si no hay. Main profile, sin fotogramas B, VBR con techo,
+BT.709 rango limitado.
 
 ### `plugins`
 

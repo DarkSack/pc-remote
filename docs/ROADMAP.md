@@ -64,7 +64,7 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - Ventanas y procesos en el móvil (el agente ya los tiene).
 - Historial de portapapeles con opt-in explícito y cifrado.
 - Macros y presets ("modo juego").
-- Streaming de pantalla (DXGI → H.264 → WebRTC).
+- ~~Streaming de pantalla~~ Hecho en 0.5.0: DXGI → H.264 por la GPU → socket propio por WSS (sin WebRTC: en la LAN no hace falta). Pendiente: audio, acceso desde fuera de casa (relay), escritorio seguro (UAC/bloqueo, requiere un servicio de sistema).
 - Gestor de archivos.
 
 ## Fase 7 · Acceso por Internet (mucho después)

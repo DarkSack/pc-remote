@@ -1,6 +1,6 @@
 # PC Remote
 
-Controla tu PC Windows desde un teléfono Android en la misma red local: energía, monitor de hardware (CPU, RAM, GPU, discos, red), ratón, teclado, multimedia, apps, procesos, historial del portapapeles (con imágenes), archivos, terminal, actividad y **plugins**.
+Controla tu PC Windows desde un teléfono Android en la misma red local: **pantalla remota** (verla y manejarla, al estilo de RustDesk), energía, monitor de hardware (CPU, RAM, GPU, discos, red), ratón, teclado, multimedia, apps, procesos, historial del portapapeles (con imágenes), archivos, terminal, actividad y **plugins**.
 
 Monorepo con dos partes:
 
@@ -15,8 +15,8 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 
 | Parte | Hecho | Pendiente |
 |---|---|---|
-| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Notificaciones de Windows |
-| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN | Probarlo en un móvil real |
+| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Notificaciones de Windows |
+| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN | Probarlo en un móvil real |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -60,7 +60,8 @@ pc-remote/
 │   │   ├── PcRemote.Modules.Media/       # SMTC + volumen
 │   │   ├── PcRemote.Modules.Network/     # interfaces, conexiones, ping
 │   │   ├── PcRemote.Modules.Files/       # explorar, abrir, subir y bajar (opcional)
-│   │   └── PcRemote.Modules.Terminal/    # PowerShell (opcional, apagada por defecto)
+│   │   ├── PcRemote.Modules.Terminal/    # PowerShell (opcional, apagada por defecto)
+│   │   └── PcRemote.Modules.Screen/      # pantalla remota: DXGI + H.264 (Media Foundation) por su propio socket
 │   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
 └── android/                              # Kotlin + Compose
 ```

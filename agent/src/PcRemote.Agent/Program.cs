@@ -120,6 +120,7 @@ internal static class Program
         typeof(PcRemote.Modules.Network.NetworkModule).Assembly,
         typeof(PcRemote.Modules.Files.FilesModule).Assembly,
         typeof(PcRemote.Modules.Terminal.TerminalModule).Assembly,
+        typeof(PcRemote.Modules.Screen.ScreenModule).Assembly,
     };
 
     private static void OpenPanel(IConfiguration configuration)

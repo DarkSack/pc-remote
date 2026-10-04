@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>PcRemote.Modules.Screen</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- DXGI Desktop Duplication (capture) and Media Foundation (H.264 on the GPU). -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Input\PcRemote.Modules.Input.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PcRemote.Tests" />
+  </ItemGroup>
+</Project>

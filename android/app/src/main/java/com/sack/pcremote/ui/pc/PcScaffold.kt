@@ -5,7 +5,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +25,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sack.pcremote.PcRemoteApplication
 import com.sack.pcremote.session.PcSession
+import com.sack.pcremote.ui.screen.RemoteScreen
 
 // ══════════════════════════════════════════════════════════════
 // El Command Center de un PC. Cinco destinos principales; todo lo
@@ -49,6 +53,8 @@ object Routes {
     const val Files = "files"
     const val Clipboard = "clipboard"
     const val Plugins = "plugins"
+    /** Full screen: no navigation bar. */
+    const val Screen = "screen"
 }
 
 @Composable
@@ -75,6 +81,8 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
     NavigationSuiteScaffold(
+        layoutType = if (current == Routes.Screen) NavigationSuiteType.None
+            else NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(currentWindowAdaptiveInfoV2()),
         navigationSuiteItems = {
             Tab.entries.forEach { tab ->
                 val selected = current == tab.route
@@ -90,7 +98,7 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
         Box(Modifier.fillMaxSize()) {
             NavHost(nav, startDestination = Tab.Home.route) {
                 composable(Tab.Home.route) { HomeScreen(vm, open = nav::navigate, onSwitchPc = onExit) }
-                composable(Tab.Control.route) { ControlScreen(vm) }
+                composable(Tab.Control.route) { ControlScreen(vm, openScreen = { nav.navigate(Routes.Screen) }) }
                 composable(Tab.Apps.route) { AppsScreen(vm) }
                 composable(Tab.Activity.route) { ActivityScreen(vm) }
                 composable(Tab.Settings.route) {
@@ -104,6 +112,7 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
                 composable(Routes.Files) { FilesScreen(vm, back) }
                 composable(Routes.Clipboard) { ClipboardScreen(vm, back) }
                 composable(Routes.Plugins) { PluginsScreen(vm, back) }
+                composable(Routes.Screen) { RemoteScreen(vm, back) }
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
         }

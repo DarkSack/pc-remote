@@ -437,6 +437,16 @@ class AgentClient(initial: AgentCredentials) {
 
     class Subscription(val id: String, val cancel: () -> Unit)
 
+    /**
+     * Opens a module socket (`/socket/screen`) on the same PC, with the same pinned
+     * certificate. The caller authenticates it with a ticket from the module.
+     */
+    fun openModuleSocket(path: String, listener: WebSocketListener): WebSocket? {
+        val url = agentWsUrl(creds.agentHost, creds.agentPort).removeSuffix("/ws") + path
+        val req = runCatching { Request.Builder().url(url).build() }.getOrNull() ?: return null
+        return http.newWebSocket(req, listener)
+    }
+
     // ── Helpers ─────────────────────────────────────────
 
     private fun buildOkHttp(pinned: () -> String): OkHttpClient {

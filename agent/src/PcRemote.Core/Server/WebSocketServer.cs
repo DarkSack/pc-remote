@@ -160,6 +160,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         });
 
         _app.Map("/ws", HandleWebSocket);
+        _app.Map("/socket/{name}", HandleModuleSocket);
 
         if (_settings.Panel.Enabled)
         {
@@ -260,6 +261,115 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             }
             _connections.Unregister(tracked.Id);
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Module sockets (/socket/{name}): the remote screen
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>Close code of a module socket whose protocol session ended (not a revoke: 4001).</summary>
+    public const WebSocketCloseStatus SessionEndedCloseStatus = (WebSocketCloseStatus)4002;
+
+    /// <summary>Time the phone has to present its ticket after the socket opens.</summary>
+    private static readonly TimeSpan TicketTimeout = TimeSpan.FromSeconds(10);
+
+    private async Task HandleModuleSocket(HttpContext ctx)
+    {
+        var name = ctx.Request.RouteValues["name"] as string ?? "";
+        var module = _router.Modules.Values.OfType<ISocketModule>()
+            .FirstOrDefault(m => string.Equals(m.SocketName, name, StringComparison.OrdinalIgnoreCase));
+
+        if (ctx.Connection.LocalPort != _settings.WebSocket.Port || module is null)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        if (!ctx.WebSockets.IsWebSocketRequest)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var socket   = await ctx.WebSockets.AcceptWebSocketAsync();
+        var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var tracked  = _connections.Register(socket, clientIp, module.SocketName);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, tracked.Closing);
+        try
+        {
+            var hello = await ReadTicketAsync(tracked, lifetime.Token);
+            var ticket = _services.GetRequiredService<SocketTickets>()
+                .Redeem(hello?.TryGetProperty("ticket", out var t) == true ? t.GetString() : null, module.SocketName);
+
+            if (ticket is null || _sessions.Get(ticket.Session.SessionId) is null)
+            {
+                _logger.LogWarning("Rejected /socket/{Name} from {Ip}: bad or expired ticket", name, clientIp);
+                await tracked.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Invalid ticket");
+                return;
+            }
+            if (!_router.IsEnabled((ICommandModule)module))
+            {
+                await tracked.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new
+                {
+                    kind = "error", code = ErrorCodes.FeatureDisabled, message = CommandRouter.DisabledMessage((ICommandModule)module),
+                }, JsonOpts), lifetime.Token);
+                await tracked.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Feature disabled");
+                return;
+            }
+
+            // Revoking the device closes this socket too (CloseDeviceAsync matches DeviceId),
+            // and so does the end of the session the ticket came from.
+            tracked.DeviceId = ticket.Session.DeviceId;
+            _connections.NotifyChanged();
+            _ = CloseWhenSessionEndsAsync(tracked, ticket.Session.SessionId, lifetime.Token);
+
+            _logger.LogInformation("[{Sess}] {Name} socket open from {Ip}", Short(ticket.Session.SessionId), name, clientIp);
+            await module.RunSocketAsync(new ModuleSocket(tracked, ticket.Session, hello!.Value), lifetime.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException)
+        {
+            // Phone went away or the session ended.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "/socket/{Name} from {Ip} failed", name, clientIp);
+        }
+        finally
+        {
+            lifetime.Cancel();
+            try { await tracked.CloseAsync(WebSocketCloseStatus.NormalClosure, ""); } catch { }
+            _connections.Unregister(tracked.Id);
+        }
+    }
+
+    private async Task<JsonElement?> ReadTicketAsync(TrackedConnection tracked, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TicketTimeout);
+        try
+        {
+            var raw = await ReceiveTextAsync(tracked, new byte[4096], 4096, timeout.Token);
+            if (raw is null) return null;
+            using var doc = JsonDocument.Parse(raw);
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? doc.RootElement.Clone() : null;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or JsonException) { return null; }
+    }
+
+    private async Task CloseWhenSessionEndsAsync(TrackedConnection tracked, string sessionId, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                if (_sessions.Get(sessionId) is null)
+                {
+                    await tracked.CloseAsync(SessionEndedCloseStatus, "Session ended");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     /// <summary>

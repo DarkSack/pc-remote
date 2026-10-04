@@ -9,7 +9,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Assets\pcremote.ico</ApplicationIcon>
     <Product>PC Remote</Product>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
   </PropertyGroup>
 
   <!-- One-file build: `./publish.ps1` (or dotnet publish -p:PublishProfile=SingleExe).
@@ -44,6 +44,7 @@
     <ProjectReference Include="..\PcRemote.Modules.Network\PcRemote.Modules.Network.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Files\PcRemote.Modules.Files.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Terminal\PcRemote.Modules.Terminal.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Screen\PcRemote.Modules.Screen.csproj" />
   </ItemGroup>
 
   <ItemGroup>

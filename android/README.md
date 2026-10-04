@@ -15,7 +15,7 @@ con la New Architecture.
 
 `compileSdk` 37, `targetSdk` 36, `minSdk` 26 (Android 8.0).
 
-## Estado (0.4.0)
+## Estado (0.5.0)
 
 Diseño «Personal Command Center»: Material 3 con tema centralizado
 (`ui/theme`), oscuro por defecto con claro real y colores dinámicos opcionales.
@@ -24,7 +24,7 @@ Barra inferior en teléfonos y *navigation rail* en tablets.
 | Pestaña | Qué hay |
 |---|---|
 | **Inicio** | Estado del PC (en línea, latencia, tiempo conectado, IP, última sincronización), acciones rápidas (bloquear, suspender, reiniciar, apagar con confirmación; silenciar), CPU/RAM/GPU/disco con gráficas, red, y accesos a las herramientas |
-| **Control** | Touchpad, teclado y multimedia (carátula, controles, volumen) |
+| **Control** | Touchpad, teclado y multimedia (carátula, controles, volumen), y **Ver pantalla** |
 | **Apps** | Rejilla con iconos reales, cuáles están abiertas, favoritas y recientes; abrir, traer al frente, cerrar |
 | **Actividad** | Línea de tiempo del PC agrupada por día, con filtros |
 | **Ajustes** | Conexión, tema, confirmaciones, vibración, alertas, bloqueo con huella/PIN, olvidar el PC, licencias |
@@ -35,6 +35,25 @@ temperaturas, VRAM), **Procesos** (agrupados, orden, búsqueda, finalizar),
 historial, copiar), **Archivos** (explorar, abrir en el PC, subir y bajar),
 **Portapapeles** (todo el historial del PC con imágenes; enviar texto o una foto
 al PC) y **Plugins** (ejecutar las acciones de los plugins activados en el PC).
+
+**Pantalla remota** (Inicio › Pantalla, o Control › Ver pantalla), al estilo de RustDesk:
+
+- Vídeo H.264 decodificado por hardware (`MediaCodec`) sobre un `TextureView`, con el
+  cursor del PC dibujado encima (su forma real).
+- **Modo ratón** (por defecto): arrastrar mueve el cursor; toque = clic; 2 dedos toque =
+  clic derecho; mantener = arrastrar; 2 dedos arrastrar = scroll; pellizcar = zoom (la
+  vista sigue al cursor).
+- **Modo táctil**: tocar hace clic ahí; mantener = clic derecho; mantener y mover =
+  arrastrar; 1 dedo = desplazar la vista con zoom o scroll sin él.
+- Barra plegable: teclado del móvil (lo escrito se replica en el PC, también las
+  correcciones), teclas especiales con Ctrl/Alt/Mayús/Win fijables, F1–F12 y atajos;
+  monitor; calidad (velocidad, equilibrada, calidad); estadísticas (fps, Mbps, latencia,
+  códec).
+- Pantalla completa y pantalla encendida mientras se mira; el vídeo se corta al salir de
+  la app y se reanuda al volver.
+
+Emparejar también se puede **escribiendo la IP** (cuando el router bloquea mDNS y no se
+puede escanear el QR).
 
 Conexión:
 

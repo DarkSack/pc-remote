@@ -12,13 +12,17 @@ public sealed class ConnectionManager
 
     public event EventHandler? ConnectionsChanged;
 
-    public int ActiveCount => _conns.Count;
+    /// <summary>Control connections (one per phone). Remote-screen sockets are counted apart.</summary>
+    public int ActiveCount => _conns.Values.Count(c => c.Purpose == TrackedConnection.ControlPurpose);
+
+    /// <summary>Open remote-screen sockets: someone is looking at this PC.</summary>
+    public int ScreenViewers => _conns.Values.Count(c => c.Purpose == "screen" && c.DeviceId is not null);
 
     public IReadOnlyCollection<TrackedConnection> Active => _conns.Values.ToArray();
 
-    public TrackedConnection Register(WebSocket socket, string clientIp)
+    public TrackedConnection Register(WebSocket socket, string clientIp, string purpose = TrackedConnection.ControlPurpose)
     {
-        var conn = new TrackedConnection(Guid.NewGuid(), socket, clientIp, DateTimeOffset.UtcNow);
+        var conn = new TrackedConnection(Guid.NewGuid(), socket, clientIp, DateTimeOffset.UtcNow) { Purpose = purpose };
         _conns[conn.Id] = conn;
         ConnectionsChanged?.Invoke(this, EventArgs.Empty);
         return conn;
@@ -40,6 +44,17 @@ public sealed class ConnectionManager
         await Task.WhenAll(targets.Select(c => c.CloseAsync(status, reason))).ConfigureAwait(false);
         return targets.Length;
     }
+
+    /// <summary>Closes every socket of one purpose ("screen"): the PC owner stops a screen share.</summary>
+    public async Task<int> ClosePurposeAsync(string purpose, string reason)
+    {
+        var targets = _conns.Values.Where(c => c.Purpose == purpose).ToArray();
+        await Task.WhenAll(targets.Select(c => c.CloseAsync(WebSocketCloseStatus.NormalClosure, reason))).ConfigureAwait(false);
+        return targets.Length;
+    }
+
+    /// <summary>Raises <see cref="ConnectionsChanged"/> after a socket changed state (a screen viewer authenticated).</summary>
+    public void NotifyChanged() => ConnectionsChanged?.Invoke(this, EventArgs.Empty);
 }
 
 /// <summary>
@@ -69,19 +84,30 @@ public sealed class TrackedConnection : IDisposable
     public string         ClientIp    { get; }
     public DateTimeOffset ConnectedAt { get; }
 
+    public const string ControlPurpose = "control";
+
+    /// <summary>"control" for the protocol socket, or the name of a module socket ("screen").</summary>
+    public string Purpose { get; init; } = ControlPurpose;
+
     /// <summary>Set once the connection authenticates. Null while bootstrapping.</summary>
     public volatile string? DeviceId;
 
     /// <summary>Cancelled when the agent closes this connection (revoke, protocol error).</summary>
     public CancellationToken Closing => _closing.Token;
 
-    public async Task SendAsync(ReadOnlyMemory<byte> utf8Json, CancellationToken ct)
+    public Task SendAsync(ReadOnlyMemory<byte> utf8Json, CancellationToken ct) =>
+        SendAsync(utf8Json, WebSocketMessageType.Text, ct);
+
+    public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken ct) =>
+        SendAsync(data, WebSocketMessageType.Binary, ct);
+
+    private async Task SendAsync(ReadOnlyMemory<byte> data, WebSocketMessageType type, CancellationToken ct)
     {
         await _sendLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (Socket.State != WebSocketState.Open) return;
-            await Socket.SendAsync(utf8Json, WebSocketMessageType.Text, endOfMessage: true, ct).ConfigureAwait(false);
+            await Socket.SendAsync(data, type, endOfMessage: true, ct).ConfigureAwait(false);
         }
         finally
         {

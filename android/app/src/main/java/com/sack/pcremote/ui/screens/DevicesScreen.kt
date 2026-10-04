@@ -50,6 +50,7 @@ fun DevicesScreen(
     val snackbar = remember { SnackbarHostState() }
     val haptics = rememberHaptics()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    var manual by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         paired = store.listAll()
@@ -176,8 +177,46 @@ fun DevicesScreen(
                     )
                 }
             }
+            // mDNS blocked by the router and no camera for the QR: type the address.
+            item {
+                TextButton(onClick = { manual = true }) {
+                    Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Conectar escribiendo la dirección")
+                }
+            }
         }
     }
+
+    if (manual) ManualAddressDialog(
+        onDismiss = { manual = false },
+        onConnect = { host, port -> manual = false; onPair(DiscoveredAgent(name = host, host = host, port = port)) },
+    )
+}
+
+/** Host and port by hand; pairing then goes through the code the PC shows. */
+@Composable
+private fun ManualAddressDialog(onDismiss: () -> Unit, onConnect: (String, Int) -> Unit) {
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("47820") }
+    val portNumber = port.toIntOrNull()?.takeIf { it in 1..65535 }
+    val valid = host.isNotBlank() && !host.contains(' ') && portNumber != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Conectar por dirección") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("La IP del PC aparece en el panel del agente y en el icono de la bandeja.", style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(host, { host = it.trim() }, label = { Text("IP o nombre del PC") }, singleLine = true,
+                    placeholder = { Text("192.168.1.50") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri))
+                OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text("Puerto") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+            }
+        },
+        confirmButton = { TextButton(enabled = valid, onClick = { onConnect(host, portNumber!!) }) { Text("Conectar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 private fun isSame(c: AgentCredentials, a: DiscoveredAgent) =

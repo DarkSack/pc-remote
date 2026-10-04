@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.*
@@ -155,7 +156,7 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
                             haptics.tick()
                             scope.launch { runCatching { vm.run("media", "volumeMute") }.onFailure { vm.post(friendlyMessage(it)) } }
                         })
-                        QuickActionButton(Icons.Outlined.ContentPaste, "Portapapeles", enabled = connected, modifier = Modifier.weight(1f), onClick = { open(Routes.Clipboard) })
+                        QuickActionButton(Icons.AutoMirrored.Outlined.ScreenShare, "Pantalla", enabled = connected, modifier = Modifier.weight(1f), onClick = { open(Routes.Screen) })
                         QuickActionButton(Icons.Outlined.Terminal, "Terminal", enabled = connected, modifier = Modifier.weight(1f), onClick = { open(Routes.Terminal) })
                         QuickActionButton(Icons.Outlined.Extension, "Plugins", enabled = connected, modifier = Modifier.weight(1f), onClick = { open(Routes.Plugins) })
                     }
@@ -233,6 +234,8 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
 
             // 4 · Tools
             full { SectionHeader("Herramientas") }
+            tool(Icons.AutoMirrored.Outlined.ScreenShare, "Pantalla remota", "Ver el PC y controlarlo",
+                enabled = connected, badge = feature("screen")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Screen) }
             tool(Icons.Outlined.QueryStats, "Monitor", "Gráficas y hardware", enabled = stats != null) { open(Routes.Monitor) }
             tool(Icons.AutoMirrored.Outlined.ListAlt, "Procesos", "Qué consume y cerrarlo", enabled = connected) { open(Routes.Processes) }
             tool(Icons.Outlined.Lan, "Red", "Interfaces, ping, conexiones", enabled = connected) { open(Routes.Network) }

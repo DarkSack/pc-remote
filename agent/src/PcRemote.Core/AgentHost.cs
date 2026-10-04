@@ -86,6 +86,7 @@ public static class AgentHost
 
         // Networking
         builder.Services.AddSingleton<ConnectionManager>();
+        builder.Services.AddSingleton<SocketTickets>();
         builder.Services.AddSingleton<WebSocketServer>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<WebSocketServer>());
         builder.Services.AddHostedService<MdnsPublisher>();
