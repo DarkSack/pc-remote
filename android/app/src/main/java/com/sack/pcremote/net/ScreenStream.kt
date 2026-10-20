@@ -100,13 +100,23 @@ class ScreenStream(private val client: AgentClient) {
     @Volatile private var ws: WebSocket? = null
     private var runner: Job? = null
     @Volatile private var quality = "balanced"
+
+    /** Sound of the PC on the phone. The player lives as long as one socket that sends it. */
+    @Volatile private var audio = true
+    private val audioLock = Any()
+    private var player: PcmPlayer? = null
+
+    private val _audioError = MutableStateFlow<String?>(null)
+    /** Why the PC cannot send its sound (no output device…), or null. */
+    val audioError: StateFlow<String?> = _audioError.asStateFlow()
     @Volatile private var display: Int? = null
     @Volatile private var rttMs: Long? = null
 
     /** Opens (or re-opens) the stream. Safe to call again: the previous one closes first. */
     @Synchronized
-    fun start(quality: String = this.quality) {
+    fun start(quality: String = this.quality, audio: Boolean = this.audio) {
         this.quality = quality
+        this.audio = audio
         runner?.cancel()
         runner = scope.launch { runLoop() }
     }
@@ -117,7 +127,13 @@ class ScreenStream(private val client: AgentClient) {
         runner = null
         ws?.close(1000, "bye")
         ws = null
+        releasePlayer()
         _state.value = ScreenState.Stopped
+    }
+
+    private fun releasePlayer() = synchronized(audioLock) {
+        player?.release()
+        player = null
     }
 
     fun close() {
@@ -181,6 +197,7 @@ class ScreenStream(private val client: AgentClient) {
             pinger.cancel()
             if (ws === socket) ws = null
             socket.close(1000, null)
+            releasePlayer()
         }
     }
 
@@ -189,6 +206,7 @@ class ScreenStream(private val client: AgentClient) {
             webSocket.send(buildJsonObject {
                 put("ticket", ticket)
                 put("quality", quality)
+                put("audio", audio)
                 display?.let { put("display", it) }
             }.toString())
         }
@@ -215,6 +233,15 @@ class ScreenStream(private val client: AgentClient) {
                     rttMs = rttMs,
                 )
                 "pong" -> root["ts"]?.jsonPrimitive?.longOrNull?.let { rttMs = System.nanoTime() / 1_000_000 - it }
+                "audio" -> {
+                    val rate = root["rate"]?.jsonPrimitive?.intOrNull
+                    _audioError.value = if (rate == null) root["error"]?.jsonPrimitive?.content ?: "Sin sonido" else null
+                    synchronized(audioLock) {
+                        player?.release()
+                        player = if (rate != null && audio) runCatching { PcmPlayer(rate) }
+                            .onFailure { Log.w(TAG, "No audio output", it) }.getOrNull() else null
+                    }
+                }
                 "error" -> done.complete(Outcome.Fatal(root["message"]?.jsonPrimitive?.content ?: "Error en el PC"))
             }
         }
@@ -228,6 +255,10 @@ class ScreenStream(private val client: AgentClient) {
                     val ts = buf.getLong(2)
                     buf.position(10)
                     sink?.onFrame(buf.slice(), key, ts)
+                }
+                0x04 -> if (buf.remaining() > 1) synchronized(audioLock) {
+                    // OkHttp's ByteString is read-only: copy the few KB rather than borrow its array.
+                    player?.let { p -> val pcm = bytes.toByteArray(); p.write(pcm, 1, pcm.size - 1) }
                 }
                 0x02 -> if (buf.remaining() >= 6) {
                     _cursor.value = RemoteCursor(buf.getShort(2).toInt(), buf.getShort(4).toInt(), buf.get(1).toInt() != 0)
@@ -299,6 +330,13 @@ class ScreenStream(private val client: AgentClient) {
     fun setQuality(q: String) {
         quality = q
         send(buildJsonObject { put("t", "quality"); put("q", q) })
+    }
+
+    /** Sound on or off: the PC starts or stops capturing it, and a new "audio" message builds the player. */
+    fun setAudio(on: Boolean) {
+        audio = on
+        if (!on) releasePlayer()
+        send(buildJsonObject { put("t", "audio"); put("on", on) })
     }
 
     fun setDisplay(index: Int) {

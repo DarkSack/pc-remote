@@ -285,3 +285,74 @@ public class ScreenStreamTests
         return (r.MessageType, buffer[..count]);
     }
 }
+
+public class ImageRotationTests
+{
+    // Source 3×2 with a padded stride of 4 (the pad, 99, must never show up):
+    //   1 2 3
+    //   4 5 6
+    private static readonly uint[] Source = [1, 2, 3, 99, 4, 5, 6, 99];
+
+    private static unsafe uint[] Rotate(Vortice.DXGI.ModeRotation rotation)
+    {
+        var dst = new uint[6];
+        fixed (uint* s = Source) fixed (uint* d = dst) ImageRotation.Apply(s, 4, 3, 2, rotation, d);
+        return dst;
+    }
+
+    [Fact]
+    public void Rotate90_turns_the_image_clockwise()
+    {
+        // 2×3: the top row (1 2 3) becomes the right column, top to bottom.
+        Assert.Equal(new uint[] { 4, 1, 5, 2, 6, 3 }, Rotate(Vortice.DXGI.ModeRotation.Rotate90));
+    }
+
+    [Fact]
+    public void Rotate270_turns_the_image_anticlockwise()
+    {
+        Assert.Equal(new uint[] { 3, 6, 2, 5, 1, 4 }, Rotate(Vortice.DXGI.ModeRotation.Rotate270));
+    }
+
+    [Fact]
+    public void Rotate180_turns_it_upside_down()
+    {
+        Assert.Equal(new uint[] { 6, 5, 4, 3, 2, 1 }, Rotate(Vortice.DXGI.ModeRotation.Rotate180));
+    }
+}
+
+public class LoopbackAudioTests
+{
+    private static byte[] Floats(params float[] v)
+    {
+        var b = new byte[v.Length * 4];
+        for (int i = 0; i < v.Length; i++) BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(i * 4), v[i]);
+        return b;
+    }
+
+    private static short[] Samples(byte[] message) =>
+        Enumerable.Range(0, (message.Length - 1) / 2).Select(i => BinaryPrimitives.ReadInt16LittleEndian(message.AsSpan(1 + i * 2))).ToArray();
+
+    [Fact]
+    public void Float_stereo_becomes_int16_stereo()
+    {
+        var m = PcRemote.Modules.Screen.Audio.LoopbackAudio.ToMessage(Floats(1f, -1f, 0.5f, 2f), channels: 2, bytesPerSample: 4)!;
+        Assert.Equal(0x04, m[0]);
+        Assert.Equal(new short[] { 32767, -32767, 16383, 32767 }, Samples(m)); // 2.0 is clipped
+    }
+
+    [Fact]
+    public void Surround_keeps_front_left_and_right_and_mono_is_doubled()
+    {
+        var six = PcRemote.Modules.Screen.Audio.LoopbackAudio.ToMessage(Floats(0.5f, -0.5f, 0.9f, 0.9f, 0.9f, 0.9f), 6, 4)!;
+        Assert.Equal(new short[] { 16383, -16383 }, Samples(six));
+        var mono = PcRemote.Modules.Screen.Audio.LoopbackAudio.ToMessage(Floats(0.5f), 1, 4)!;
+        Assert.Equal(new short[] { 16383, 16383 }, Samples(mono));
+    }
+
+    [Fact]
+    public void Silence_and_partial_frames_send_nothing()
+    {
+        Assert.Null(PcRemote.Modules.Screen.Audio.LoopbackAudio.ToMessage(Floats(0f, 0f, 0f, 0f), 2, 4));
+        Assert.Null(PcRemote.Modules.Screen.Audio.LoopbackAudio.ToMessage(new byte[7], 2, 4));
+    }
+}

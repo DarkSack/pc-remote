@@ -8,6 +8,7 @@
     <Project Path="src/PcRemote.Modules.Files/PcRemote.Modules.Files.csproj" />
     <Project Path="src/PcRemote.Modules.Media/PcRemote.Modules.Media.csproj" />
     <Project Path="src/PcRemote.Modules.Network/PcRemote.Modules.Network.csproj" />
+    <Project Path="src/PcRemote.Modules.Notifications/PcRemote.Modules.Notifications.csproj" />
     <Project Path="src/PcRemote.Modules.Processes/PcRemote.Modules.Processes.csproj" />
     <Project Path="src/PcRemote.Modules.Screen/PcRemote.Modules.Screen.csproj" />
     <Project Path="src/PcRemote.Modules.System/PcRemote.Modules.System.csproj" />

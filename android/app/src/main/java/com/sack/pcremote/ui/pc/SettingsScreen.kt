@@ -136,6 +136,9 @@ fun SettingsScreen(vm: PcSession, onSwitchPc: () -> Unit, onUnpaired: () -> Unit
                     SwitchRow(Icons.Outlined.NotificationsActive, "Alertas del PC", "Aviso cuando la CPU, GPU, RAM o el disco pasan de lo normal", settings.alerts) { v ->
                         haptics.toggle(v); app.settings.update { it.copy(alerts = v) }
                     }
+                    SwitchRow(Icons.Outlined.Notifications, "Notificaciones de Windows", "Aviso en la app cuando llega una al PC (si la función está activada en el PC)", settings.pcNotifications) { v ->
+                        haptics.toggle(v); app.settings.update { it.copy(pcNotifications = v) }
+                    }
                 }
             }
 

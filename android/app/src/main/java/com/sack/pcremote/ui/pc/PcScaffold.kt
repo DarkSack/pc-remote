@@ -53,6 +53,7 @@ object Routes {
     const val Files = "files"
     const val Clipboard = "clipboard"
     const val Plugins = "plugins"
+    const val Notifications = "notifications"
     /** Full screen: no navigation bar. */
     const val Screen = "screen"
 }
@@ -112,6 +113,7 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
                 composable(Routes.Files) { FilesScreen(vm, back) }
                 composable(Routes.Clipboard) { ClipboardScreen(vm, back) }
                 composable(Routes.Plugins) { PluginsScreen(vm, back) }
+                composable(Routes.Notifications) { NotificationsScreen(vm, back) }
                 composable(Routes.Screen) { RemoteScreen(vm, back) }
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))

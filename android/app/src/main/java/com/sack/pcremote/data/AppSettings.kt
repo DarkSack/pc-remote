@@ -16,6 +16,8 @@ data class Settings(
     val appLock: Boolean = false,
     /** Local notification when the PC goes offline or raises an alert (while the app is open). */
     val alerts: Boolean = true,
+    /** Snackbar when a Windows notification arrives (feature "notifications" on in the PC). */
+    val pcNotifications: Boolean = true,
 )
 
 /**
@@ -35,6 +37,7 @@ class AppSettings(context: Context) {
         haptics = prefs.getBoolean(KEY_HAPTICS, true),
         appLock = prefs.getBoolean(KEY_LOCK, false),
         alerts = prefs.getBoolean(KEY_ALERTS, true),
+        pcNotifications = prefs.getBoolean(KEY_PC_NOTIFICATIONS, true),
     )
 
     fun update(change: (Settings) -> Settings) {
@@ -46,6 +49,7 @@ class AppSettings(context: Context) {
             .putBoolean(KEY_HAPTICS, next.haptics)
             .putBoolean(KEY_LOCK, next.appLock)
             .putBoolean(KEY_ALERTS, next.alerts)
+            .putBoolean(KEY_PC_NOTIFICATIONS, next.pcNotifications)
             .apply()
         _state.value = next
     }
@@ -57,5 +61,6 @@ class AppSettings(context: Context) {
         const val KEY_HAPTICS = "haptics"
         const val KEY_LOCK = "app_lock"
         const val KEY_ALERTS = "alerts"
+        const val KEY_PC_NOTIFICATIONS = "pc_notifications"
     }
 }

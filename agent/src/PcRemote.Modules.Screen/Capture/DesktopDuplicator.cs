@@ -76,13 +76,23 @@ internal sealed class DesktopDuplicator : IDisposable
     private readonly ID3D11Device _device;
     private readonly ID3D11DeviceContext _context;
     private readonly IDXGIOutputDuplication _duplication;
-    private readonly ID3D11Texture2D _latest;
-    private readonly ID3D11Texture2D _staging;
+    private readonly ModeRotation _rotation;
+    private ID3D11Texture2D _latest = null!;
+    private ID3D11Texture2D _staging = null!;
     private byte[] _shapeBuffer = new byte[64 * 64 * 4];
+    private byte[] _rotated = [];
+
+    /// <summary>Size of the image DXGI hands over: always unrotated, even on a portrait monitor.</summary>
+    private int _texWidth, _texHeight;
 
     public DisplayInfo Display { get; }
-    public int Width { get; }
-    public int Height { get; }
+
+    /// <summary>Size of the monitor as its user sees it (rotation applied): what the phone gets.</summary>
+    public int Width { get; private set; }
+    public int Height { get; private set; }
+
+    /// <summary>Monitor turned in Windows' display settings: the image is rotated before encoding.</summary>
+    private bool Rotated => _rotation is ModeRotation.Rotate90 or ModeRotation.Rotate180 or ModeRotation.Rotate270;
 
     /// <summary>True once a full image is in the GPU copy.</summary>
     public bool HasImage { get; private set; }
@@ -128,13 +138,26 @@ internal sealed class DesktopDuplicator : IDisposable
             adapter.Dispose();
         }
 
-        var mode = _duplication.Description.ModeDescription;
-        Width = (int)mode.Width;
-        Height = (int)mode.Height;
+        var dd = _duplication.Description;
+        _rotation = dd.Rotation;
+        CreateTextures((int)dd.ModeDescription.Width, (int)dd.ModeDescription.Height);
+    }
+
+    /// <summary>GPU copy and CPU readback textures for an image of this (unrotated) size.</summary>
+    private void CreateTextures(int width, int height)
+    {
+        _staging?.Dispose();
+        _latest?.Dispose();
+        _texWidth = width;
+        _texHeight = height;
+        var sideways = _rotation is ModeRotation.Rotate90 or ModeRotation.Rotate270;
+        (Width, Height) = sideways ? (height, width) : (width, height);
+        HasImage = false;
+
         var desc = new Texture2DDescription
         {
-            Width = (uint)Width,
-            Height = (uint)Height,
+            Width = (uint)width,
+            Height = (uint)height,
             MipLevels = 1,
             ArraySize = 1,
             Format = Format.B8G8R8A8_UNorm,
@@ -161,6 +184,9 @@ internal sealed class DesktopDuplicator : IDisposable
             if (info.LastPresentTime != 0)
             {
                 using var texture = resource.QueryInterface<ID3D11Texture2D>();
+                // The real image size wins over the mode's: CopyResource needs both equal.
+                var td = texture.Description;
+                if ((int)td.Width != _texWidth || (int)td.Height != _texHeight) CreateTextures((int)td.Width, (int)td.Height);
                 _context.CopyResource(_latest, texture);
                 HasImage = true;
                 ev.NewImage = true;
@@ -171,6 +197,13 @@ internal sealed class DesktopDuplicator : IDisposable
                 ev.PointerVisible = info.PointerPosition.Visible;
                 ev.PointerX = info.PointerPosition.Position.X;
                 ev.PointerY = info.PointerPosition.Position.Y;
+                // On a turned monitor DXGI does not document the space of that position;
+                // the desktop position of the cursor is unambiguous (the agent is DPI aware).
+                if (Rotated && GetCursorPos(out var pt))
+                {
+                    ev.PointerX = pt.X - Display.X;
+                    ev.PointerY = pt.Y - Display.Y;
+                }
             }
             if (info.PointerShapeBufferSize > 0)
                 ev.Shape = ReadShape(info.PointerShapeBufferSize);
@@ -188,9 +221,29 @@ internal sealed class DesktopDuplicator : IDisposable
     {
         _context.CopyResource(_staging, _latest);
         var map = _context.Map(_staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
-        try { use(map.DataPointer, (int)map.RowPitch); }
+        try
+        {
+            if (!Rotated)
+            {
+                use(map.DataPointer, (int)map.RowPitch);
+                return;
+            }
+            if (_rotated.Length != Width * Height * 4) _rotated = new byte[Width * Height * 4];
+            fixed (byte* dst = _rotated)
+            {
+                ImageRotation.Apply((uint*)map.DataPointer, (int)map.RowPitch / 4, _texWidth, _texHeight, _rotation, (uint*)dst);
+                use((IntPtr)dst, Width * 4);
+            }
+        }
         finally { _context.Unmap(_staging, 0); }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X, Y; }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out POINT point);
 
     private unsafe CursorShape? ReadShape(uint size)
     {
@@ -214,6 +267,43 @@ internal sealed class DesktopDuplicator : IDisposable
 }
 
 internal sealed class CaptureLostException(string message, Exception? inner = null) : Exception(message, inner);
+
+/// <summary>
+/// Turns DXGI's unrotated image of a rotated monitor into what its user sees,
+/// with the same mapping as Microsoft's Desktop Duplication sample:
+/// Rotate90 puts source (x, y) at (srcHeight-1-y, x), Rotate270 at (y, srcWidth-1-x).
+/// </summary>
+internal static class ImageRotation
+{
+    /// <param name="srcStride">Source row length in pixels (row pitch / 4).</param>
+    /// <param name="dst">Packed output, (srcHeight × srcWidth) when sideways.</param>
+    // shortcut: walks source columns (cache-unfriendly, ~10 ms for 1080×1920); a tiled copy or a GPU pass if it shows in encodeMs.
+    public static unsafe void Apply(uint* src, int srcStride, int srcWidth, int srcHeight, ModeRotation rotation, uint* dst)
+    {
+        var sideways = rotation is ModeRotation.Rotate90 or ModeRotation.Rotate270;
+        int outW = sideways ? srcHeight : srcWidth, outH = sideways ? srcWidth : srcHeight;
+        var s = (nint)src;
+        var d = (nint)dst;
+        Parallel.For(0, outH, y =>
+        {
+            uint* row = (uint*)d + (long)y * outW;
+            uint* p;
+            long step;
+            switch (rotation)
+            {
+                case ModeRotation.Rotate90:  // column y of the source, bottom to top
+                    p = (uint*)s + (long)(srcHeight - 1) * srcStride + y; step = -srcStride; break;
+                case ModeRotation.Rotate270: // column srcWidth-1-y, top to bottom
+                    p = (uint*)s + (srcWidth - 1 - y); step = srcStride; break;
+                case ModeRotation.Rotate180: // row srcHeight-1-y, right to left
+                    p = (uint*)s + (long)(srcHeight - 1 - y) * srcStride + srcWidth - 1; step = -1; break;
+                default:
+                    p = (uint*)s + (long)y * srcStride; step = 1; break;
+            }
+            for (int x = 0; x < outW; x++, p += step) row[x] = *p;
+        });
+    }
+}
 
 /// <summary>DXGI pointer shapes (monochrome, color, masked color) as plain RGBA.</summary>
 internal static class CursorShapes

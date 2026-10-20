@@ -287,6 +287,27 @@ Función opcional, **desactivada por defecto**.
 Cada comando es un `powershell.exe -NoProfile -NonInteractive` nuevo, sin perfil
 y con el mismo usuario que el agente. Salida máx. ~1 M caracteres por comando.
 
+### `notifications`
+
+Las notificaciones que muestra Windows, en el móvil. Función opcional,
+**desactivada por defecto**: pueden traer mensajes privados o códigos de
+verificación. Solo lectura: no se contestan, cierran ni pulsan.
+
+| Action | Kind | Params | Data |
+|---|---|---|---|
+| `watch` | subscribe | — | Primero `{ op: "snapshot", items: [Notification], error? }` con las 50 últimas (la más nueva primero). Después `{ op: "add", item }` por cada una que llega (el PC mira cada 2 s) y `{ op: "disabled" }` si se apaga la función en el panel, y el stream acaba |
+
+`Notification` = `{ id, app, appId, title, body, ts }`. `title` es el primer
+texto del aviso (≤ 200 caracteres) y `body` el resto unido con saltos de línea
+(≤ 1000). `app` es el nombre del menú Inicio o, si no lo tiene, uno sacado del
+`appId` (AUMID o ruta). `ts` en ms Unix.
+
+El PC las lee de la base de datos donde Windows guarda las del centro de
+notificaciones (`%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db`),
+en solo lectura. No es un API documentado: si Windows cambia su formato, llega
+`error` en el `snapshot` en vez de notificaciones. Los avisos sin texto
+(insignias, iconos) no se envían.
+
 ### `screen`
 
 Pantalla remota: ver el PC y controlarlo, al estilo de RustDesk en la LAN.
@@ -309,7 +330,8 @@ esperen detrás de un fotograma:
 1. `screen.open` por el socket de control (ya autenticado) → `ticket`.
    Un ticket vale **una vez**, para este módulo, durante 30 s.
 2. `wss://pc:47820/socket/screen` con el mismo certificado fijado. Primer
-   mensaje (texto, ≤ 4 KB, en ≤ 10 s): `{ ticket, quality?, display? }`.
+   mensaje (texto, ≤ 4 KB, en ≤ 10 s): `{ ticket, quality?, display?, audio? }`.
+   `audio: true` pide también el sonido del PC.
    `quality` = `speed` (30 fps, ~3 Mbps a 1080p) · `balanced` (60 fps, ~6 Mbps)
    · `quality` (60 fps, ~12 Mbps, sin reducir monitores 4K).
 3. El PC cierra con 1008 si el ticket no vale, y con 4001/4002 si se revoca el
@@ -323,6 +345,7 @@ esperen detrás de un fotograma:
 | `status` | `{ state: "ok" \| "blocked", message? }`. `blocked` = escritorio seguro (UAC, bloqueo, Ctrl+Alt+Supr), que Windows no deja capturar |
 | `stats` | Cada segundo: `{ fps, kbps, bitrateKbps, encodeMs, queued }` |
 | `pong` | `{ ts }` (eco del `ping`) |
+| `audio` | `{ rate, channels: 2 }` al empezar el sonido, o `{ error }` si el PC no puede capturarlo (sin salida de audio…) |
 | `error` | `{ message }` y el PC cierra (sin códec H.264, captura imposible…) |
 
 **PC → móvil, binario (big-endian):**
@@ -332,6 +355,7 @@ esperen detrás de un fotograma:
 | `0x01` vídeo | `[1]` flags (bit 0 = fotograma clave) · `[2..9]` instante de captura en µs · H.264 Annex B. Cada fotograma clave lleva SPS y PPS |
 | `0x02` cursor | `[1]` visible · `[2..3]` x · `[4..5]` y, en píxeles del monitor (`sourceWidth`) |
 | `0x03` forma | `[2..3]` ancho · `[4..5]` alto · `[6..7]` punto activo x · `[8..9]` y · RGBA por filas |
+| `0x04` sonido | `[1..]` PCM de 16 bits **little-endian**, estéreo intercalado (I, D), a `rate` Hz. Lo que suena en la salida predeterminada del PC |
 
 **Móvil → PC, texto (JSON, campo `t`):**
 
@@ -346,6 +370,7 @@ esperen detrás de un fotograma:
 | `kf` | — | Pedir un fotograma clave (decodificador nuevo o con errores) |
 | `display` | `i` | Cambiar de monitor |
 | `quality` | `q` | Cambiar de calidad |
+| `audio` | `on: bool` | Encender / apagar el sonido del PC |
 | `ping` | `ts` | El PC responde `pong` |
 
 Al cerrar el socket se sueltan los botones y teclas que el móvil dejó pulsados.
@@ -354,7 +379,12 @@ Control de flujo: como mucho 2 fotogramas esperan al socket. Si la red no da
 abasto, el PC salta fotogramas (codifica el último cuando hay sitio) y baja el
 bitrate un 30 %; lo sube un 15 % cada 4 s sin problemas, hasta el de la calidad
 elegida. Los fotogramas ya codificados nunca se tiran: cada uno depende del
-anterior.
+anterior. El sonido sí: si hay 8 paquetes esperando o el vídeo va atrasado, el
+paquete nuevo se descarta (un corte breve antes que retraso).
+
+Monitores girados (vertical): el PC gira la imagen antes de codificarla, así
+que `width`, `height`, `sourceWidth`, `sourceHeight` y el cursor ya vienen en la
+orientación que ve el usuario.
 
 Captura: DXGI Desktop Duplication. Codificación: H.264 por la GPU (AMD AMF,
 NVIDIA NVENC, Intel Quick Sync) vía Media Foundation, o el codificador por

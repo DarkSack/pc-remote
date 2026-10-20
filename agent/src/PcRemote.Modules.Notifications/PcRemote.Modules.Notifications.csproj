@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>PcRemote.Modules.Notifications</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PcRemote.Core\PcRemote.Core.csproj" />
+    <!-- App names for the notifications (Start menu catalog). -->
+    <ProjectReference Include="..\PcRemote.Modules.Applications\PcRemote.Modules.Applications.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PcRemote.Tests" />
+  </ItemGroup>
+</Project>

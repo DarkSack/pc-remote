@@ -200,6 +200,17 @@ data class SystemStats(
     val ts: Long = 0,
 )
 
+// ── Windows notifications ───────────────────────────────
+@Serializable
+data class PcNotification(
+    val id: Long,
+    val app: String = "",
+    val appId: String = "",
+    val title: String = "",
+    val body: String = "",
+    val ts: Long = 0,
+)
+
 // ── Activity ────────────────────────────────────────────
 @Serializable
 data class ActivityEvent(

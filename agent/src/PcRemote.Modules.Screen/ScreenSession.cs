@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using PcRemote.Core.Router;
 using PcRemote.Modules.Input;
+using PcRemote.Modules.Screen.Audio;
 using PcRemote.Modules.Screen.Capture;
 using PcRemote.Modules.Screen.Encoding;
 
@@ -30,7 +31,12 @@ namespace PcRemote.Modules.Screen;
 ///   0x01 video   [1]=flags (bit0 key frame) [2..9]=capture time µs, then Annex B H.264
 ///   0x02 cursor  [1]=visible [2..3]=x [4..5]=y (source pixels of the monitor)
 ///   0x03 shape   [2..3]=w [4..5]=h [6..7]=hot x [8..9]=hot y, then w*h RGBA
-/// Text frames carry JSON: config, status, stats, pong, error.
+///   0x04 audio   16-bit little-endian stereo PCM at the rate of the last "audio" message
+/// Text frames carry JSON: config, audio, status, stats, pong, error.
+///
+/// Sound is opt-in per socket ("audio": true in the hello, or {"t":"audio","on":…}).
+/// It never waits behind a congested link: packets are dropped while the video is
+/// behind or a few are already queued, so it cannot add delay.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ScreenSession
@@ -38,6 +44,9 @@ internal sealed class ScreenSession
     private const int MaxQueuedFrames = 2;
     private const int MaxInputMessageBytes = 16 * 1024;
     private const int MinBitrate = 800_000;
+
+    /// <summary>WASAPI hands over ~10 ms per packet: about 80 ms of sound in the queue at most.</summary>
+    private const int MaxQueuedAudio = 8;
 
     private readonly ModuleSocket _socket;
     private readonly ILogger _logger;
@@ -47,6 +56,9 @@ internal sealed class ScreenSession
     private readonly HashSet<string> _heldKeys = new(StringComparer.OrdinalIgnoreCase);
 
     private int _queuedFrames;
+    private int _queuedAudio;
+    private LoopbackAudio? _audio;
+    private readonly bool _audioAtStart;
     private volatile DisplayInfo? _display;
     private volatile bool _inputBlocked;
     private Quality _quality;
@@ -54,7 +66,7 @@ internal sealed class ScreenSession
     private bool _displayChanged = true;
     private bool _keyFrameWanted;
 
-    private readonly record struct Outgoing(byte[] Data, bool Binary, bool IsFrame);
+    private readonly record struct Outgoing(byte[] Data, bool Binary, bool IsFrame, bool IsAudio = false);
 
     public ScreenSession(ModuleSocket socket, ILogger logger)
     {
@@ -63,6 +75,7 @@ internal sealed class ScreenSession
         var hello = socket.Hello;
         _requestedDisplay = hello.TryGetProperty("display", out var d) && d.ValueKind == JsonValueKind.Number ? d.GetInt32() : -1;
         _quality = Quality.Parse(hello.TryGetProperty("quality", out var q) ? q.GetString() : null);
+        _audioAtStart = hello.TryGetProperty("audio", out var a) && a.ValueKind == JsonValueKind.True;
     }
 
     /// <summary>Total time someone watched, for the activity entry.</summary>
@@ -77,11 +90,13 @@ internal sealed class ScreenSession
         pipeline.Start();
         try
         {
+            if (_audioAtStart) StartAudio();
             await ReceiveLoopAsync(stop.Token);
         }
         finally
         {
             stop.Cancel();
+            StopAudio();
             _outgoing.Writer.TryComplete();
             ReleaseHeld();
             await Task.Run(() => pipeline.Join(TimeSpan.FromSeconds(3)), CancellationToken.None);
@@ -339,6 +354,7 @@ internal sealed class ScreenSession
                 finally
                 {
                     if (msg.IsFrame) Interlocked.Decrement(ref _queuedFrames);
+                    if (msg.IsAudio) Interlocked.Decrement(ref _queuedAudio);
                 }
             }
             // The pipeline ended (no encoder, capture failed) or the session is closing.
@@ -420,6 +436,10 @@ internal sealed class ScreenSession
                 _keyFrameWanted = true;
                 break;
 
+            case "audio":
+                if (m.GetProperty("on").GetBoolean()) StartAudio(); else StopAudio();
+                break;
+
             case "display":
             {
                 var index = m.GetProperty("i").GetInt32();
@@ -438,6 +458,41 @@ internal sealed class ScreenSession
                 await _socket.SendJsonAsync(new { kind = "pong", ts = m.GetProperty("ts").GetInt64() }, ct);
                 break;
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Sound (only touched by the receive loop and RunAsync, one after the other)
+    // ══════════════════════════════════════════════════════════════
+
+    private void StartAudio()
+    {
+        if (_audio is not null) return;
+        try
+        {
+            _audio = new LoopbackAudio(SendAudio);
+            Send(Json(new { kind = "audio", rate = _audio.SampleRate, channels = 2 }));
+            _logger.LogInformation("Screen: sound on, {Rate} Hz", _audio.SampleRate);
+        }
+        catch (Exception ex)
+        {
+            // No output device, or an exotic mix format: the video goes on without sound.
+            _logger.LogInformation("Screen: no sound: {Message}", ex.Message);
+            Send(Json(new { kind = "audio", error = "No se puede capturar el sonido del PC: " + ex.Message }));
+        }
+    }
+
+    private void StopAudio()
+    {
+        _audio?.Dispose();
+        _audio = null;
+    }
+
+    /// <summary>On WASAPI's thread. Dropped rather than queued when the link is behind.</summary>
+    private void SendAudio(byte[] message)
+    {
+        if (Volatile.Read(ref _queuedFrames) >= MaxQueuedFrames || Volatile.Read(ref _queuedAudio) >= MaxQueuedAudio) return;
+        Interlocked.Increment(ref _queuedAudio);
+        if (!_outgoing.Writer.TryWrite(new Outgoing(message, true, false, IsAudio: true))) Interlocked.Decrement(ref _queuedAudio);
     }
 
     /// <summary>A phone that vanished mid-drag must not leave a button or Ctrl held on the PC.</summary>

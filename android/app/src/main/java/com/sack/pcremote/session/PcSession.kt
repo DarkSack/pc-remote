@@ -20,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -82,6 +83,10 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
     val activity: StateFlow<List<ActivityEvent>> = _activity.asStateFlow()
     private val _activityLoaded = MutableStateFlow(false)
     val activityLoaded: StateFlow<Boolean> = _activityLoaded.asStateFlow()
+
+    private val _notifications = MutableStateFlow(PcNotifications())
+    val notifications: StateFlow<PcNotifications> = _notifications.asStateFlow()
+    private var notificationsSub: AgentClient.Subscription? = null
 
     private val _plugins = MutableStateFlow<PluginCatalog?>(null)
     val plugins: StateFlow<PluginCatalog?> = _plugins.asStateFlow()
@@ -179,11 +184,47 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
         }
         val activity = c.subscribe("activity", "watch", buildJsonObject { put("limit", 150) },
             onError = { _activityLoaded.value = true }) { data -> onActivity(data) }
+        watchNotifications(c)
         try {
             awaitCancellation()
         } finally {
             stats.cancel()
             activity.cancel()
+            notificationsSub?.cancel()
+            notificationsSub = null
+        }
+    }
+
+    private fun watchNotifications(c: AgentClient) {
+        notificationsSub?.cancel()
+        notificationsSub = c.subscribe("notifications", "watch", onError = { e ->
+            val off = e.code == "FEATURE_DISABLED"
+            _notifications.value = PcNotifications(loaded = true, disabled = off, error = if (off) null else friendlyMessage(e))
+        }) { data -> onNotifications(data) }
+    }
+
+    /** The notifications screen opened: if the feature was off, the owner may have just turned it on. */
+    fun refreshNotifications() {
+        val c = client ?: return
+        val n = _notifications.value
+        if (c.state.value == ConnectionState.CONNECTED && (n.disabled || n.error != null)) watchNotifications(c)
+    }
+
+    private fun onNotifications(data: JsonElement) {
+        val obj = runCatching { data.jsonObject }.getOrNull() ?: return
+        when (obj["op"]?.jsonPrimitive?.content) {
+            "snapshot" -> {
+                val items = runCatching {
+                    AgentJson.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(PcNotification.serializer()), obj["items"]!!)
+                }.getOrDefault(emptyList())
+                _notifications.value = PcNotifications(items, loaded = true, error = obj["error"]?.jsonPrimitive?.contentOrNull)
+            }
+            "add" -> {
+                val n = runCatching { AgentJson.decodeFromJsonElement(PcNotification.serializer(), obj["item"]!!) }.getOrNull() ?: return
+                _notifications.update { it.copy(items = (listOf(n) + it.items.filter { o -> o.id != n.id }).take(100)) }
+                if (deps.settings.state.value.pcNotifications) _messages.tryEmit("${n.app}: ${n.title}")
+            }
+            "disabled" -> _notifications.value = PcNotifications(loaded = true, disabled = true)
         }
     }
 
@@ -337,3 +378,12 @@ class MetricHistory(val capacity: Int) {
         @Synchronized fun toList(): List<Float> = List(size) { data[(start + it) % capacity] }
     }
 }
+
+/** Windows notifications of this PC, as the notifications screen shows them. */
+data class PcNotifications(
+    val items: List<PcNotification> = emptyList(),
+    val loaded: Boolean = false,
+    /** Feature "notifications" is off in the PC's panel. */
+    val disabled: Boolean = false,
+    val error: String? = null,
+)

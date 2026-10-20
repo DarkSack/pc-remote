@@ -118,6 +118,7 @@ internal static class Program
         typeof(PcRemote.Modules.Windows.WindowsModule).Assembly,
         typeof(PcRemote.Modules.Media.MediaModule).Assembly,
         typeof(PcRemote.Modules.Network.NetworkModule).Assembly,
+        typeof(PcRemote.Modules.Notifications.NotificationsModule).Assembly,
         typeof(PcRemote.Modules.Files.FilesModule).Assembly,
         typeof(PcRemote.Modules.Terminal.TerminalModule).Assembly,
         typeof(PcRemote.Modules.Screen.ScreenModule).Assembly,

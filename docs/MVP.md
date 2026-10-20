@@ -44,6 +44,7 @@ Sin marcar = no verificado todavía en un móvil real con la app Kotlin.
 
 Implementado después, en el agente y en el móvil: ratón/teclado, portapapeles
 (con historial), multimedia, ventanas, procesos, lanzador de apps, archivos,
-terminal, plugins y pantalla remota; ver [`ROADMAP.md`](ROADMAP.md).
+terminal, plugins, pantalla remota (con sonido) y notificaciones de Windows; ver
+[`ROADMAP.md`](ROADMAP.md).
 
-Más adelante: notificaciones de Windows, macros, acceso por Internet.
+Más adelante: macros, acceso por Internet.

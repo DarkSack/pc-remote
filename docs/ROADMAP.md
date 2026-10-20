@@ -66,10 +66,14 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Archivos: explorar, abrir en el PC, subir y bajar.
 - [x] Plugins (23 incluidos) y funciones opcionales, que se activan solo desde el panel.
 - [x] Pantalla remota (0.5.0): DXGI → H.264 por la GPU → socket propio por WSS (sin
-      WebRTC: en la LAN no hace falta). Pendiente: probarla en un móvil real, audio,
-      monitores en vertical (sin probar), acceso desde fuera de casa (relay) y
-      escritorio seguro (UAC/bloqueo, requiere un servicio de sistema).
-- Notificaciones de Windows reenviadas al móvil.
+      WebRTC: en la LAN no hace falta). Con sonido (WASAPI loopback → PCM) y
+      monitores en vertical (el PC gira la imagen). Pendiente: probarla en un móvil
+      real (también el sonido) y en un monitor girado de verdad, acceso desde fuera
+      de casa (relay) y escritorio seguro (UAC/bloqueo, requiere un servicio de
+      sistema).
+- [x] Notificaciones de Windows en el móvil (función `notifications`, apagada por
+      defecto): se leen de la base de datos de Windows. Pendiente: probarlas en un
+      móvil real; avisos con la app cerrada (servicio en segundo plano).
 - Macros y presets ("modo juego").
 
 ## Fase 7 · Acceso por Internet (mucho después)

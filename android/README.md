@@ -27,14 +27,20 @@ Barra inferior en teléfonos y *navigation rail* en tablets.
 | **Control** | Touchpad, teclado y multimedia (carátula, controles, volumen), y **Ver pantalla** |
 | **Apps** | Rejilla con iconos reales, cuáles están abiertas, favoritas y recientes; abrir, traer al frente, cerrar |
 | **Actividad** | Línea de tiempo del PC agrupada por día, con filtros |
-| **Ajustes** | Conexión, tema, confirmaciones, vibración, alertas, bloqueo con huella/PIN, olvidar el PC, licencias |
+| **Ajustes** | Conexión, tema, confirmaciones, vibración, alertas, aviso de notificaciones de Windows, bloqueo con huella/PIN, olvidar el PC, licencias |
 
 Herramientas: **Monitor** (10 min de historial de CPU, RAM, GPU y red; discos,
 temperaturas, VRAM), **Procesos** (agrupados, orden, búsqueda, finalizar),
 **Red** (interfaces, conexiones, ping desde el PC), **Terminal** (PowerShell,
 historial, copiar), **Archivos** (explorar, abrir en el PC, subir y bajar),
 **Portapapeles** (todo el historial del PC con imágenes; enviar texto o una foto
-al PC) y **Plugins** (ejecutar las acciones de los plugins activados en el PC).
+al PC), **Notificaciones** (las que muestra Windows, con aviso en la app al llegar
+una; hay que activarlas en el PC) y **Plugins** (ejecutar las acciones de los
+plugins activados en el PC).
+
+Las notificaciones solo llegan mientras la app está abierta y conectada (o los
+30 s que sigue la conexión en segundo plano): no hay servicio en segundo plano
+ni notificaciones del sistema de Android.
 
 **Pantalla remota** (Inicio › Pantalla, o Control › Ver pantalla), al estilo de RustDesk:
 
@@ -47,8 +53,9 @@ al PC) y **Plugins** (ejecutar las acciones de los plugins activados en el PC).
   arrastrar; 1 dedo = desplazar la vista con zoom o scroll sin él.
 - Barra plegable: teclado del móvil (lo escrito se replica en el PC, también las
   correcciones), teclas especiales con Ctrl/Alt/Mayús/Win fijables, F1–F12 y atajos;
-  monitor; calidad (velocidad, equilibrada, calidad); estadísticas (fps, Mbps, latencia,
-  códec).
+  monitor; calidad (velocidad, equilibrada, calidad); sonido del PC (encendido por
+  defecto, PCM por `AudioTrack`); estadísticas (fps, Mbps, latencia, códec).
+- Monitores en vertical: el PC gira la imagen, el móvil la ve derecha.
 - Pantalla completa y pantalla encendida mientras se mira; el vídeo se corta al salir de
   la app y se reanuda al volver.
 

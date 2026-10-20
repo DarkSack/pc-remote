@@ -15,8 +15,8 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 
 | Parte | Hecho | Pendiente |
 |---|---|---|
-| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Notificaciones de Windows |
-| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN. Probada en un móvil real hasta la 0.4 | Probar la pantalla remota (0.5) en un móvil real |
+| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU, con sonido y monitores en vertical), `notifications` (las de Windows, desactivado por defecto), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Probar en un monitor en vertical de verdad |
+| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Notificaciones de Windows, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN. Probada en un móvil real hasta la 0.4 | Probar en un móvil real la pantalla remota (0.5), su sonido y las notificaciones |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -59,9 +59,10 @@ pc-remote/
 │   │   ├── PcRemote.Modules.Windows/     # listar, enfocar, minimizar, maximizar, cerrar
 │   │   ├── PcRemote.Modules.Media/       # SMTC + volumen
 │   │   ├── PcRemote.Modules.Network/     # interfaces, conexiones, ping
+│   │   ├── PcRemote.Modules.Notifications/ # notificaciones de Windows (opcional, apagada por defecto)
 │   │   ├── PcRemote.Modules.Files/       # explorar, abrir, subir y bajar (opcional)
 │   │   ├── PcRemote.Modules.Terminal/    # PowerShell (opcional, apagada por defecto)
-│   │   └── PcRemote.Modules.Screen/      # pantalla remota: DXGI + H.264 (Media Foundation) por su propio socket
+│   │   └── PcRemote.Modules.Screen/      # pantalla remota: DXGI + H.264 (Media Foundation) y sonido (WASAPI) por su propio socket
 │   └── tests/PcRemote.Tests/             # xUnit: emparejamiento, errores de parámetros, catálogo, teclas…
 └── android/                              # Kotlin + Compose
 ```
@@ -95,7 +96,7 @@ Aparece un icono en la bandeja. Desde él puedes abrir el **panel web** (`http:/
 
 Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI), `features.json` (funciones y plugins activados), `plugins/` y `logs/`.
 
-La **terminal** viene apagada y los **plugins** nuevos también (el agente trae 23, de pantalla, energía, audio, red, limpieza, winget…): se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
+La **terminal** y las **notificaciones** vienen apagadas, y los **plugins** nuevos también (el agente trae 23, de pantalla, energía, audio, red, limpieza, winget…): se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
 
 Puertos por defecto (en `appsettings.json`):
 

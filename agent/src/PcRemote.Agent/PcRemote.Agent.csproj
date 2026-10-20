@@ -42,6 +42,7 @@
     <ProjectReference Include="..\PcRemote.Modules.Windows\PcRemote.Modules.Windows.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Media\PcRemote.Modules.Media.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Network\PcRemote.Modules.Network.csproj" />
+    <ProjectReference Include="..\PcRemote.Modules.Notifications\PcRemote.Modules.Notifications.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Files\PcRemote.Modules.Files.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Terminal\PcRemote.Modules.Terminal.csproj" />
     <ProjectReference Include="..\PcRemote.Modules.Screen\PcRemote.Modules.Screen.csproj" />

@@ -18,6 +18,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -177,9 +179,11 @@ fun RemoteScreen(vm: PcSession, onBack: () -> Unit) {
     val stats by stream.stats.collectAsStateWithLifecycle()
     val remoteCursor by stream.cursor.collectAsStateWithLifecycle()
     val cursorImage by stream.cursorImage.collectAsStateWithLifecycle()
+    val audioError by stream.audioError.collectAsStateWithLifecycle()
 
     var mode by rememberSaveable { mutableStateOf(InputMode.Mouse) }
     var quality by rememberSaveable { mutableStateOf("balanced") }
+    var sound by rememberSaveable { mutableStateOf(true) }
     var toolbar by rememberSaveable { mutableStateOf(true) }
     var showKeys by rememberSaveable { mutableStateOf(false) }
     var showStats by rememberSaveable { mutableStateOf(false) }
@@ -195,7 +199,7 @@ fun RemoteScreen(vm: PcSession, onBack: () -> Unit) {
 
     // Streaming follows the app: paused in the background, back when it returns.
     LifecycleStartEffect(stream) {
-        stream.start(quality)
+        stream.start(quality, sound)
         onStopOrDispose { stream.stop() }
     }
     FullScreen()
@@ -419,9 +423,9 @@ fun RemoteScreen(vm: PcSession, onBack: () -> Unit) {
             }
         }
 
-        StatusOverlay(state, config, firstFrame, onRetry = { stream.start(quality) }, onBack = onBack)
+        StatusOverlay(state, config, firstFrame, onRetry = { stream.start(quality, sound) }, onBack = onBack)
 
-        if (showStats) StatsOverlay(stats, config, Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(8.dp))
+        if (showStats) StatsOverlay(stats, config, if (sound) audioError else null, Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(8.dp))
 
         Column(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 4.dp)) {
             Toolbar(
@@ -439,6 +443,8 @@ fun RemoteScreen(vm: PcSession, onBack: () -> Unit) {
                 onDisplay = { stream.setDisplay(it); firstFrame = false },
                 quality = quality,
                 onQuality = { quality = it; stream.setQuality(it); firstFrame = false },
+                sound = sound,
+                onSound = { haptics.tick(); sound = !sound; stream.setAudio(sound) },
                 showStats = showStats,
                 onStats = { showStats = !showStats },
                 onBack = onBack,
@@ -561,7 +567,7 @@ private fun StatusOverlay(state: ScreenState, config: ScreenConfig?, firstFrame:
 private data class Quad(val title: String, val body: String?, val busy: Boolean, val actions: Boolean)
 
 @Composable
-private fun StatsOverlay(stats: com.sack.pcremote.net.ScreenStats?, config: ScreenConfig?, modifier: Modifier) {
+private fun StatsOverlay(stats: com.sack.pcremote.net.ScreenStats?, config: ScreenConfig?, audioError: String?, modifier: Modifier) {
     val s = stats ?: return
     val c = config ?: return
     Surface(modifier, shape = MaterialTheme.shapes.small, color = Color.Black.copy(alpha = 0.6f), contentColor = Color.White) {
@@ -570,6 +576,7 @@ private fun StatsOverlay(stats: com.sack.pcremote.net.ScreenStats?, config: Scre
                 append("${s.fps.roundToInt()} fps · ${"%.1f".format(s.kbps / 1000.0)} Mbps")
                 s.rttMs?.let { append(" · ${it} ms") }
                 append("\n${c.width}×${c.height} · ${c.encoder}${if (c.hardware) " (GPU)" else " (CPU)"} · ${"%.1f".format(s.encodeMs)} ms")
+                audioError?.let { append("\n$it") }
             },
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -586,6 +593,7 @@ private fun Toolbar(
     zoomed: Boolean, onFit: () -> Unit,
     config: ScreenConfig?, onDisplay: (Int) -> Unit,
     quality: String, onQuality: (String) -> Unit,
+    sound: Boolean, onSound: () -> Unit,
     showStats: Boolean, onStats: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -594,7 +602,8 @@ private fun Toolbar(
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
         tonalElevation = 4.dp,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+        // Scrolls sideways: up to ten buttons do not fit across a phone held upright.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
             if (expanded) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Salir") }
                 Toggle(keyboard, onKeyboard, Icons.Outlined.Keyboard, "Teclado")
@@ -609,6 +618,8 @@ private fun Toolbar(
                 }
                 Menu(Icons.Outlined.HighQuality, "Calidad", QUALITIES, quality, onQuality)
                 if (zoomed) IconButton(onClick = onFit) { Icon(Icons.Outlined.FitScreen, "Ajustar a la pantalla") }
+                Toggle(sound, onSound, if (sound) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                    if (sound) "Sonido del PC (quitar)" else "Sonido del PC (poner)")
                 Toggle(showStats, onStats, Icons.Outlined.QueryStats, "Estadísticas")
             }
             IconButton(onClick = onToggle) {

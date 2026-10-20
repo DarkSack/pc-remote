@@ -244,6 +244,8 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
             tool(Icons.Outlined.Terminal, "Terminal", "PowerShell en el PC",
                 enabled = connected, badge = feature("terminal")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Terminal) }
             tool(Icons.Outlined.ContentPaste, "Portapapeles", "Historial, imágenes incluidas", enabled = connected) { open(Routes.Clipboard) }
+            tool(Icons.Outlined.Notifications, "Notificaciones", "Las que muestra Windows",
+                enabled = connected, badge = feature("notifications")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Notifications) }
             tool(Icons.Outlined.Extension, "Plugins", plugins?.let { p -> "${p.plugins.count { it.enabled }} activos" } ?: "Acciones propias", enabled = connected) { open(Routes.Plugins) }
         }
     }

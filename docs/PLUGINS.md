@@ -2,7 +2,8 @@
 
 Hay dos formas de añadir cosas a PC Remote sin tocar el código del agente:
 
-1. **Funciones opcionales** que ya trae el agente (Terminal, Archivos). Se
+1. **Funciones opcionales** que ya trae el agente (Terminal, Archivos, Pantalla
+   remota, Notificaciones). Se
    encienden y apagan en el panel.
 2. **Plugins** en la carpeta de plugins del PC:
    - **de acciones** (`plugin.json`): botones que ejecutan un programa o abren
@@ -21,6 +22,8 @@ Un plugin nuevo aparece **desactivado**.
 |---|---|---|
 | `files` | activada | Explorar carpetas y unidades, abrir en el PC, subir y bajar archivos |
 | `terminal` | **desactivada** | PowerShell en el PC con la salida en el móvil |
+| `screen` | activada | Pantalla remota: ver el PC (con sonido) y controlarlo |
+| `notifications` | **desactivada** | Las notificaciones de Windows en el móvil (pueden traer mensajes privados o códigos) |
 
 Con una función apagada, sus comandos responden `FEATURE_DISABLED` y la app
 muestra cómo activarla. El estado se guarda en
