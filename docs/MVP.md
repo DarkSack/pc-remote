@@ -13,7 +13,7 @@ Leyenda: ✅ hecho · ⏳ pendiente · ✂️ descartado.
 - ✅ **SystemInfo**: hostname, SO, CPU, RAM, uptime; stream de CPU/RAM.
 - ✅ Serilog → fichero diario + últimas 500 líneas en el panel.
 - ✅ Registro de auditoría en SQLite (`command_log`, 30 días, sin parámetros ni input continuo), visible en el panel.
-- ⏳ Disco, GPU y red en SystemInfo.
+- ✅ Disco, GPU, temperaturas y red en SystemInfo.
 
 ## Android
 
@@ -23,7 +23,7 @@ Leyenda: ✅ hecho · ⏳ pendiente · ✂️ descartado.
 - ✅ Máquina de estados de conexión con reconexión y backoff.
 - ✅ Dashboard: CPU/RAM en vivo, info del sistema, botones de energía.
 - ✅ Confirmación antes de acciones destructivas.
-- ✅ Touchpad, teclado, multimedia, apps y portapapeles (sin probar aún en un móvil real).
+- ✅ Touchpad, teclado, multimedia, apps y portapapeles (probados en un móvil real en oct 2026).
 - ✅ Emparejamiento por QR y Wake-on-LAN.
 
 ## Criterios de aceptación
@@ -42,9 +42,8 @@ Sin marcar = no verificado todavía en un móvil real con la app Kotlin.
 
 ## Fuera del MVP
 
-Implementado después en el agente (Fase 4): ratón/teclado, portapapeles,
-multimedia, ventanas, procesos, lanzador de apps. En el móvil siguen
-pendientes; ver [`ROADMAP.md`](ROADMAP.md).
+Implementado después, en el agente y en el móvil: ratón/teclado, portapapeles
+(con historial), multimedia, ventanas, procesos, lanzador de apps, archivos,
+terminal, plugins y pantalla remota; ver [`ROADMAP.md`](ROADMAP.md).
 
-Más adelante: historial de portapapeles, macros, streaming de pantalla,
-gestor de archivos, acceso por Internet.
+Más adelante: notificaciones de Windows, macros, acceso por Internet.

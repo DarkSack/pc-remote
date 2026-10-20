@@ -235,7 +235,7 @@ public sealed class FilesModule(ActivityLog activity) : ICommandModule, IOptiona
     {
         var p = req.Params ?? default;
         var uploadId = p.GetProperty("uploadId").GetString() ?? "";
-        if (uploadId.Length is 0 or > 64) return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, "uploadId no válido");
+        if (!IsValidUploadId(uploadId)) return CommandResponse.Fail(req.Id, ErrorCodes.InvalidParams, "uploadId no válido");
         var offset = p.GetProperty("offset").GetInt64();
         var data = Convert.FromBase64String(p.GetProperty("data").GetString() ?? "");
         var done = p.TryGetProperty("done", out var d) && d.ValueKind == JsonValueKind.True;
@@ -298,6 +298,13 @@ public sealed class FilesModule(ActivityLog activity) : ICommandModule, IOptiona
         if (!Path.IsPathFullyQualified(raw)) throw new ArgumentException("La ruta debe ser absoluta (C:\\…).");
         return Path.GetFullPath(raw);
     }
+
+    /// <summary>
+    /// Part of the hidden .part file name: letters, digits, '-' and '_' only, or an id
+    /// like "a\..\..\" would put that file outside the chosen folder.
+    /// </summary>
+    internal static bool IsValidUploadId(string id) =>
+        id.Length is > 0 and <= 64 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
     internal static string? SanitizeFileName(string? name)
     {

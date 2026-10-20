@@ -41,7 +41,7 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Android: AGP 9, Kotlin 2.4, OkHttp 5, credenciales cifradas con
       Android Keystore (sin `security-crypto`), mDNS con varios PCs.
 
-## Fase 5 · Paridad del móvil · ✅ en código (sep 2026), ⏳ probar en dispositivo
+## Fase 5 · Paridad del móvil · ✅ (probada en un móvil real, oct 2026)
 
 - [x] Touchpad: mover con aceleración, toque = clic, 2 dedos = clic derecho y
       scroll suave, mantener = arrastrar (`input.mouseDown/Up`, `mouseScroll.delta`).
@@ -60,12 +60,17 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] Registro de auditoría (`command_log`, 30 días) visible en el panel.
 - [x] Wake-on-LAN desde el móvil (la MAC se aprende al conectar).
 - [x] `media.nowPlaying` como stream, con carátula.
+- [x] Procesos en el móvil (pantalla Procesos) y ventanas (Apps: traer al frente, cerrar).
+- [x] Historial del portapapeles (texto, imágenes y archivos): solo en memoria, nunca
+      en disco, y sin lo que los gestores de contraseñas marcan como privado.
+- [x] Archivos: explorar, abrir en el PC, subir y bajar.
+- [x] Plugins (23 incluidos) y funciones opcionales, que se activan solo desde el panel.
+- [x] Pantalla remota (0.5.0): DXGI → H.264 por la GPU → socket propio por WSS (sin
+      WebRTC: en la LAN no hace falta). Pendiente: probarla en un móvil real, audio,
+      monitores en vertical (sin probar), acceso desde fuera de casa (relay) y
+      escritorio seguro (UAC/bloqueo, requiere un servicio de sistema).
 - Notificaciones de Windows reenviadas al móvil.
-- Ventanas y procesos en el móvil (el agente ya los tiene).
-- Historial de portapapeles con opt-in explícito y cifrado.
 - Macros y presets ("modo juego").
-- ~~Streaming de pantalla~~ Hecho en 0.5.0: DXGI → H.264 por la GPU → socket propio por WSS (sin WebRTC: en la LAN no hace falta). Pendiente: audio, acceso desde fuera de casa (relay), escritorio seguro (UAC/bloqueo, requiere un servicio de sistema).
-- Gestor de archivos.
 
 ## Fase 7 · Acceso por Internet (mucho después)
 

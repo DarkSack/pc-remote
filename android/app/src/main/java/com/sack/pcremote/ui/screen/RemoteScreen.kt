@@ -260,156 +260,162 @@ fun RemoteScreen(vm: PcSession, onBack: () -> Unit) {
         cursor.localAt = SystemClock.uptimeMillis()
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .onSizeChanged { viewport.cw = it.width.toFloat(); viewport.ch = it.height.toFloat(); viewport.clamp() }
-            .pointerInput(mode, slop) {
-                val margin = 48.dp.toPx()
-                awaitEachGesture {
-                    val first = awaitFirstDown(requireUnconsumed = false)
-                    val startedAt = first.uptimeMillis
-                    val startPos = first.position
-                    var maxPointers = 1
-                    var travelled = 0f
-                    var longPressed = false
-                    var dragging = false
-                    var twoFinger = 0 // 0 undecided, 1 scroll, 2 zoom
-                    var startSpread = 0f
-                    var lastSpread = 0f
-                    var lastPos = startPos
-
-                    while (true) {
-                        val event = if (!longPressed && maxPointers == 1 && travelled < slop) {
-                            val remaining = startedAt + LONG_PRESS_MS - SystemClock.uptimeMillis()
-                            try {
-                                withTimeout(max(1L, remaining)) { awaitPointerEvent() }
-                            } catch (_: PointerEventTimeoutCancellationException) {
-                                longPressed = true
-                                haptics.longPress()
-                                if (mode == InputMode.Mouse) {
-                                    flushMove()
-                                    stream.button("left", true)
-                                    dragging = true
-                                } else {
-                                    setLocal(viewport.toNormalized(startPos))
-                                    flushMove()
-                                }
-                                continue
-                            }
-                        } else awaitPointerEvent()
-
-                        val pressed = event.changes.filter { it.pressed }
-                        if (pressed.isEmpty()) break
-                        if (pressed.size > maxPointers) {
-                            maxPointers = pressed.size
-                            if (pressed.size == 2) { startSpread = spread(pressed); lastSpread = startSpread }
-                        }
-                        val move = pressed.fold(Offset.Zero) { a, c -> a + c.positionChange() } / pressed.size.toFloat()
-                        travelled += move.getDistance()
-
-                        if (pressed.size == 1 && maxPointers == 1) {
-                            val pos = pressed[0].position
-                            lastPos = pos
-                            when (mode) {
-                                InputMode.Mouse -> if (travelled >= slop || longPressed) {
-                                    // 1:1 with the finger over the visible image, slightly faster when flicked.
-                                    val gain = 1f + min(move.getDistance(), 40f) / 60f
-                                    setLocal(Offset(
-                                        cursor.x + move.x * gain / (viewport.zoom * viewport.bw),
-                                        cursor.y + move.y * gain / (viewport.zoom * viewport.bh),
-                                    ))
-                                    viewport.follow(viewport.toScreen(cursor.x, cursor.y), margin)
-                                }
-                                InputMode.Touch -> when {
-                                    longPressed -> {
-                                        if (!dragging && travelled >= slop) {
-                                            flushMove()
-                                            stream.button("left", true)
-                                            dragging = true
-                                        }
-                                        if (dragging) {
-                                            setLocal(viewport.toNormalized(pos))
-                                            viewport.follow(pos, margin)
-                                        }
-                                    }
-                                    travelled >= slop -> if (viewport.zoom > 1.01f) viewport.panBy(move)
-                                        else cursor.scrollY += move.y * SCROLL_UNITS_PER_PX
-                                }
-                            }
-                        } else if (pressed.size >= 2) {
-                            val spread = spread(pressed)
-                            val centroid = pressed.fold(Offset.Zero) { a, c -> a + c.position } / pressed.size.toFloat()
-                            if (twoFinger == 0) {
-                                twoFinger = when {
-                                    abs(spread - startSpread) > slop * 1.5f -> 2
-                                    travelled > slop * 1.5f -> 1
-                                    else -> 0
-                                }
-                            }
-                            when (twoFinger) {
-                                2 -> if (lastSpread > 0f) viewport.zoomBy(spread / lastSpread, centroid, move)
-                                1 -> {
-                                    cursor.scrollY += move.y * SCROLL_UNITS_PER_PX
-                                    cursor.scrollX -= move.x * SCROLL_UNITS_PER_PX
-                                }
-                            }
-                            lastSpread = spread
-                        }
-                        event.changes.forEach { it.consume() }
-                    }
-
-                    when {
-                        dragging -> { flushMove(); stream.button("left", false); mods.clear() }
-                        longPressed && mode == InputMode.Touch -> click("right")
-                        travelled < slop * 1.5f && twoFinger == 0 -> when (maxPointers) {
-                            1 -> {
-                                if (mode == InputMode.Touch) setLocal(viewport.toNormalized(lastPos))
-                                click("left")
-                            }
-                            2 -> click("right")
-                            else -> click("middle")
-                        }
-                    }
-                }
-            },
-    ) {
-        // Video and cursor share the zoom/pan transform.
+    // The gestures belong to the image alone. Compose gives a touch to the topmost sibling
+    // only, so the toolbar, the keys and the dialogs further down keep their taps. As
+    // children of the gesture Box they reached the gesture code too: every button tap
+    // also clicked on the PC, and Ctrl/Alt/Win were spent by that click at once.
+    Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    transformOrigin = TransformOrigin(0f, 0f)
-                    scaleX = viewport.zoom; scaleY = viewport.zoom
-                    translationX = viewport.panX; translationY = viewport.panY
+                .background(Color.Black)
+                .onSizeChanged { viewport.cw = it.width.toFloat(); viewport.ch = it.height.toFloat(); viewport.clamp() }
+                .pointerInput(mode, slop) {
+                    val margin = 48.dp.toPx()
+                    awaitEachGesture {
+                        val first = awaitFirstDown(requireUnconsumed = false)
+                        val startedAt = first.uptimeMillis
+                        val startPos = first.position
+                        var maxPointers = 1
+                        var travelled = 0f
+                        var longPressed = false
+                        var dragging = false
+                        var twoFinger = 0 // 0 undecided, 1 scroll, 2 zoom
+                        var startSpread = 0f
+                        var lastSpread = 0f
+                        var lastPos = startPos
+
+                        while (true) {
+                            val event = if (!longPressed && maxPointers == 1 && travelled < slop) {
+                                val remaining = startedAt + LONG_PRESS_MS - SystemClock.uptimeMillis()
+                                try {
+                                    withTimeout(max(1L, remaining)) { awaitPointerEvent() }
+                                } catch (_: PointerEventTimeoutCancellationException) {
+                                    longPressed = true
+                                    haptics.longPress()
+                                    if (mode == InputMode.Mouse) {
+                                        flushMove()
+                                        stream.button("left", true)
+                                        dragging = true
+                                    } else {
+                                        setLocal(viewport.toNormalized(startPos))
+                                        flushMove()
+                                    }
+                                    continue
+                                }
+                            } else awaitPointerEvent()
+
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            if (pressed.size > maxPointers) {
+                                maxPointers = pressed.size
+                                if (pressed.size == 2) { startSpread = spread(pressed); lastSpread = startSpread }
+                            }
+                            val move = pressed.fold(Offset.Zero) { a, c -> a + c.positionChange() } / pressed.size.toFloat()
+                            travelled += move.getDistance()
+
+                            if (pressed.size == 1 && maxPointers == 1) {
+                                val pos = pressed[0].position
+                                lastPos = pos
+                                when (mode) {
+                                    InputMode.Mouse -> if (travelled >= slop || longPressed) {
+                                        // 1:1 with the finger over the visible image, slightly faster when flicked.
+                                        val gain = 1f + min(move.getDistance(), 40f) / 60f
+                                        setLocal(Offset(
+                                            cursor.x + move.x * gain / (viewport.zoom * viewport.bw),
+                                            cursor.y + move.y * gain / (viewport.zoom * viewport.bh),
+                                        ))
+                                        viewport.follow(viewport.toScreen(cursor.x, cursor.y), margin)
+                                    }
+                                    InputMode.Touch -> when {
+                                        longPressed -> {
+                                            if (!dragging && travelled >= slop) {
+                                                flushMove()
+                                                stream.button("left", true)
+                                                dragging = true
+                                            }
+                                            if (dragging) {
+                                                setLocal(viewport.toNormalized(pos))
+                                                viewport.follow(pos, margin)
+                                            }
+                                        }
+                                        travelled >= slop -> if (viewport.zoom > 1.01f) viewport.panBy(move)
+                                            else cursor.scrollY += move.y * SCROLL_UNITS_PER_PX
+                                    }
+                                }
+                            } else if (pressed.size >= 2) {
+                                val spread = spread(pressed)
+                                val centroid = pressed.fold(Offset.Zero) { a, c -> a + c.position } / pressed.size.toFloat()
+                                if (twoFinger == 0) {
+                                    twoFinger = when {
+                                        abs(spread - startSpread) > slop * 1.5f -> 2
+                                        travelled > slop * 1.5f -> 1
+                                        else -> 0
+                                    }
+                                }
+                                when (twoFinger) {
+                                    2 -> if (lastSpread > 0f) viewport.zoomBy(spread / lastSpread, centroid, move)
+                                    1 -> {
+                                        cursor.scrollY += move.y * SCROLL_UNITS_PER_PX
+                                        cursor.scrollX -= move.x * SCROLL_UNITS_PER_PX
+                                    }
+                                }
+                                lastSpread = spread
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+
+                        when {
+                            dragging -> { flushMove(); stream.button("left", false); mods.clear() }
+                            longPressed && mode == InputMode.Touch -> click("right")
+                            travelled < slop * 1.5f && twoFinger == 0 -> when (maxPointers) {
+                                1 -> {
+                                    if (mode == InputMode.Touch) setLocal(viewport.toNormalized(lastPos))
+                                    click("left")
+                                }
+                                2 -> click("right")
+                                else -> click("middle")
+                            }
+                        }
+                    }
                 },
         ) {
-            val c = config
-            if (c != null) {
-                VideoSurface(
-                    stream = stream,
-                    config = c,
-                    onFirstFrame = { firstFrame = true },
-                    modifier = Modifier
-                        .absoluteOffset { IntOffset(viewport.bl.roundToInt(), viewport.bt.roundToInt()) }
-                        .size(with(density) { viewport.bw.toDp() }, with(density) { viewport.bh.toDp() }),
-                )
+            // Video and cursor share the zoom/pan transform.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = viewport.zoom; scaleY = viewport.zoom
+                        translationX = viewport.panX; translationY = viewport.panY
+                    },
+            ) {
+                val c = config
+                if (c != null) {
+                    VideoSurface(
+                        stream = stream,
+                        config = c,
+                        onFirstFrame = { firstFrame = true },
+                        modifier = Modifier
+                            .absoluteOffset { IntOffset(viewport.bl.roundToInt(), viewport.bt.roundToInt()) }
+                            .size(with(density) { viewport.bw.toDp() }, with(density) { viewport.bh.toDp() }),
+                    )
+                }
             }
-        }
 
-        // Cursor on top, at a size that stays visible when the image is shrunk.
-        val img = cursorImage
-        if (config != null && img != null && (remoteCursor.visible || mode == InputMode.Mouse)) {
-            Canvas(Modifier.fillMaxSize()) {
-                val p = viewport.toScreen(cursor.x, cursor.y)
-                val scale = max(viewport.zoom * viewport.fit, density.density * 0.5f)
-                val bmp = img.bitmap.asImageBitmap()
-                drawImage(
-                    image = bmp,
-                    dstOffset = IntOffset((p.x - img.hotX * scale).roundToInt(), (p.y - img.hotY * scale).roundToInt()),
-                    dstSize = IntSize((bmp.width * scale).roundToInt(), (bmp.height * scale).roundToInt()),
-                )
+            // Cursor on top, at a size that stays visible when the image is shrunk.
+            val img = cursorImage
+            if (config != null && img != null && (remoteCursor.visible || mode == InputMode.Mouse)) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val p = viewport.toScreen(cursor.x, cursor.y)
+                    val scale = max(viewport.zoom * viewport.fit, density.density * 0.5f)
+                    val bmp = img.bitmap.asImageBitmap()
+                    drawImage(
+                        image = bmp,
+                        dstOffset = IntOffset((p.x - img.hotX * scale).roundToInt(), (p.y - img.hotY * scale).roundToInt()),
+                        dstSize = IntSize((bmp.width * scale).roundToInt(), (bmp.height * scale).roundToInt()),
+                    )
+                }
             }
         }
 

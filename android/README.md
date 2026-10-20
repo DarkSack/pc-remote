@@ -72,8 +72,8 @@ Conexión:
   aparece en ninguna otra dirección.
 - Con la app en segundo plano la conexión dura 30 s y luego se cierra.
 
-⚠️ Compila y los tests de lógica pasan, pero **no se ha probado aún en un móvil
-real**.
+Hasta la 0.4.0 se probó en un móvil real. ⚠️ La pantalla remota (0.5.0) compila
+y sus tests de lógica pasan, pero **aún no se ha probado en un móvil**.
 
 El escáner de QR lo proporciona Google Play services (sin permiso de cámara
 en la app). En móviles sin Play services, empareja con el código.
@@ -85,7 +85,7 @@ desde apagado.
 ## Tests
 
 ```powershell
-.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan (JVM, sin dispositivo)
+.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan, AgentWsUrl, ParameterSets (JVM, sin dispositivo)
 ```
 
 ### Migración de credenciales (0.1.0 → 0.2.0)

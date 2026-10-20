@@ -294,6 +294,18 @@ public class FilesHelpersTests
         Assert.Equal(expected, FilesModule.SanitizeFileName(name));
     }
 
+    [Theory]
+    [InlineData("0f8a2c7d9e1b4a6f8c3d2e1f0a9b8c7d", true)] // what the app sends: a UUID without dashes
+    [InlineData("subida-1_b", true)]
+    [InlineData(@"a\..\..\", false)]
+    [InlineData("../x", false)]
+    [InlineData("", false)]
+    public void Upload_ids_cannot_carry_a_path(string id, bool valid)
+    {
+        Assert.Equal(valid, FilesModule.IsValidUploadId(id));
+        Assert.False(FilesModule.IsValidUploadId(new string('a', 65)));
+    }
+
     [Fact]
     public void Existing_names_get_a_counter()
     {

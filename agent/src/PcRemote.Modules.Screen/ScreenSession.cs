@@ -236,10 +236,15 @@ internal sealed class ScreenSession
                     Send(Json(stats.Snapshot(encoder, Volatile.Read(ref _queuedFrames))));
             }
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Screen pipeline failed");
-            Send(Json(new { kind = "error", message = "La captura falló: " + ex.Message }));
+            // Catch everything: an exception escaping this thread ends the whole agent, and
+            // after a slow stop (Join gave up) even ct.WaitHandle throws ObjectDisposedException.
+            if (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Screen pipeline failed");
+                Send(Json(new { kind = "error", message = "La captura falló: " + ex.Message }));
+            }
         }
         finally
         {

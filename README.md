@@ -16,7 +16,7 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 | Parte | Hecho | Pendiente |
 |---|---|---|
 | Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `PcRemote.exe`** | Notificaciones de Windows |
-| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN | Probarlo en un móvil real |
+| Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN. Probada en un móvil real hasta la 0.4 | Probar la pantalla remota (0.5) en un móvil real |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

@@ -94,7 +94,13 @@ class AgentClient(initial: AgentCredentials) {
 
     /** Ping sent and not answered yet (monotonic ms), or 0. */
     @Volatile private var pingSentAt = 0L
-    @Volatile private var pongWaiter: CompletableDeferred<Unit>? = null
+
+    /**
+     * Everyone waiting for a pong. The heartbeat and ensureAlive() can ping at the
+     * same time; with a single waiter the second replaced the first, whose caller
+     * then timed out and forced a reconnect on a socket that was fine.
+     */
+    private val pongWaiters = java.util.concurrent.CopyOnWriteArrayList<CompletableDeferred<Unit>>()
 
     private val http: OkHttpClient by lazy { buildOkHttp { creds.certFingerprintHex } }
 
@@ -327,7 +333,7 @@ class AgentClient(initial: AgentCredentials) {
                     _latency.value = System.nanoTime() / 1_000_000 - sent
                     pingSentAt = 0L
                 }
-                pongWaiter?.complete(Unit)
+                pongWaiters.forEach { it.complete(Unit) }
             }
         }
     }
@@ -336,10 +342,14 @@ class AgentClient(initial: AgentCredentials) {
     private suspend fun ping(timeoutMs: Long): Boolean {
         val socket = ws ?: return false
         val waiter = CompletableDeferred<Unit>()
-        pongWaiter = waiter
-        pingSentAt = System.nanoTime() / 1_000_000
-        if (!socket.send("""{"kind":"ping","ts":${System.currentTimeMillis()}}""")) return false
-        return withTimeoutOrNull(timeoutMs) { waiter.await() } != null
+        pongWaiters += waiter
+        try {
+            pingSentAt = System.nanoTime() / 1_000_000
+            if (!socket.send("""{"kind":"ping","ts":${System.currentTimeMillis()}}""")) return false
+            return withTimeoutOrNull(timeoutMs) { waiter.await() } != null
+        } finally {
+            pongWaiters -= waiter
+        }
     }
 
     /** Every 5 s: latency for the UI, and the watchdog for half-open sockets. */
@@ -378,7 +388,7 @@ class AgentClient(initial: AgentCredentials) {
         pending.values.forEach { it.completeExceptionally(cause) }
         pending.clear()
         streams.clear()
-        pongWaiter?.cancel()
+        pongWaiters.forEach { it.cancel() }
         pingSentAt = 0L
     }
 
