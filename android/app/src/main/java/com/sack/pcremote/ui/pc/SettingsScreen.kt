@@ -25,6 +25,7 @@ import com.sack.pcremote.net.ConnectionState
 import com.sack.pcremote.session.PcSession
 import com.sack.pcremote.ui.components.*
 import com.sack.pcremote.ui.theme.MonoStyle
+import com.sack.pcremote.pro.LocalPro
 
 // ══════════════════════════════════════════════════════════════
 // Ajustes: conexión con este PC, apariencia, comportamiento,
@@ -44,6 +45,7 @@ private val LICENSES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: PcSession, onSwitchPc: () -> Unit, onUnpaired: () -> Unit, open: (String) -> Unit) {
+    val pro = LocalPro.current
     val ctx = LocalContext.current
     val app = ctx.applicationContext as PcRemoteApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
@@ -164,6 +166,23 @@ fun SettingsScreen(vm: PcSession, onSwitchPc: () -> Unit, onUnpaired: () -> Unit
                         leadingContent = { Icon(Icons.AutoMirrored.Outlined.Logout, null, tint = MaterialTheme.colorScheme.error) },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                         modifier = Modifier.clickableRow { confirmUnpair = true },
+                    )
+                }
+            }
+
+            // ── Pro ───────────────────────────────────
+            item { SectionHeader("Versión Pro") }
+            item {
+                SettingsGroup {
+                    ListItem(
+                        headlineContent = { Text(if (pro.active) "Pro activa" else "Desbloquear Pro") },
+                        supportingContent = {
+                            Text(if (pro.active) "Gracias por apoyar la app. Tienes todas las funciones."
+                                else "Pantalla remota con sonido, archivos, terminal, plugins, notificaciones y varios PCs. Un solo pago.")
+                        },
+                        leadingContent = { Icon(Icons.Outlined.WorkspacePremium, null) },
+                        trailingContent = if (pro.active) null else ({ TextButton(onClick = pro.offer) { Text("Ver") } }),
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     )
                 }
             }

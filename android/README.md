@@ -97,7 +97,7 @@ desde apagado.
 ## Tests
 
 ```powershell
-.\gradlew testDebugUnitTest   # QrPayload, WakeOnLan, AgentWsUrl, ParameterSets (JVM, sin dispositivo)
+.\gradlew test   # QrPayload, WakeOnLan, AgentWsUrl, ParameterSets, Pro (JVM, sin dispositivo)
 ```
 
 ### Migración de credenciales (0.1.0 → 0.2.0)
@@ -120,8 +120,16 @@ Requiere:
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 cd android
-.\gradlew assembleDebug      # o assembleRelease
+.\gradlew assembleInternaDebug   # APK para repartir a mano (Pro incluido): assembleInternaRelease
+.\gradlew bundlePlayRelease      # AAB para Google Play (Pro se compra dentro)
 ```
+
+Hay dos canales: **interna** es el APK de `dist/` que se instala a mano, y
+como fuera de la tienda no se puede cobrar por Google Play trae Pro activo;
+**play** es el de la tienda y cobra Pro como compra única (producto `pro` en
+Play Console). Gratis: ratón, teclado, multimedia, apps, energía e info del
+PC, con un PC. Pro: pantalla remota, archivos, terminal, portapapeles,
+notificaciones, plugins y varios PCs (`Routes.Pro` y el emparejamiento).
 
 Si Gradle falla al descargar con `PKIX path building failed` (proxy o
 antivirus que inspecciona HTTPS), haz que Java use el almacén de
@@ -131,7 +139,8 @@ certificados de Windows:
 $env:JAVA_TOOL_OPTIONS = "-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT -Djavax.net.ssl.trustStore=NUL"
 ```
 
-El APK queda en `app/build/outputs/apk/<debug|release>/`.
+El APK queda en `app/build/outputs/apk/<interna|play>/<debug|release>/` y el
+AAB en `app/build/outputs/bundle/playRelease/`.
 
 ### Firma de release
 

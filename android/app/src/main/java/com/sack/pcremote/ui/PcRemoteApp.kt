@@ -1,5 +1,6 @@
 package com.sack.pcremote.ui
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -7,11 +8,16 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sack.pcremote.PcRemoteApplication
+import com.sack.pcremote.pro.LocalPro
+import com.sack.pcremote.pro.ProAccess
+import com.sack.pcremote.pro.ProDialog
 import com.sack.pcremote.ui.components.LocalSettings
 import com.sack.pcremote.ui.pc.PcScaffold
 import com.sack.pcremote.ui.screens.DevicesScreen
@@ -46,6 +52,21 @@ fun PcRemoteApp(app: PcRemoteApplication) {
     val prefs = remember { app.getSharedPreferences("nav", android.content.Context.MODE_PRIVATE) }
     var autoOpened by rememberSaveable { mutableStateOf(false) }
 
+    val pro by app.pro.active.collectAsStateWithLifecycle()
+    val price by app.pro.price.collectAsStateWithLifecycle()
+    var offering by rememberSaveable { mutableStateOf(false) }
+    val activity = LocalActivity.current
+    // On every return: a pending payment may have gone through, or a refund taken Pro away.
+    LifecycleResumeEffect(Unit) { app.pro.refresh(); onPauseOrDispose {} }
+    val access = ProAccess(pro) { offering = true }
+    // Free keeps one PC: a second one needs Pro.
+    val pairing: (() -> Unit) -> Unit = { go -> if (pro || app.store.listAll().isEmpty()) go() else offering = true }
+
+    if (offering) {
+        ProDialog(price, onBuy = { activity?.let(app.pro::buy); offering = false }, onDismiss = { offering = false })
+    }
+
+    CompositionLocalProvider(LocalPro provides access) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         NavHost(navController = nav, startDestination = "devices") {
             composable("devices") {
@@ -57,8 +78,8 @@ fun PcRemoteApp(app: PcRemoteApplication) {
                 }
                 DevicesScreen(
                     app = app,
-                    onPair = { agent -> nav.navigate("pair/${enc(agent.host)}/${agent.port}/${enc(agent.name)}") },
-                    onPairQr = { qr -> nav.navigate("pair/${enc(qr.host)}/${qr.port}/${enc(qr.name)}?code=${qr.code}&fp=${qr.fp}") },
+                    onPair = { agent -> pairing { nav.navigate("pair/${enc(agent.host)}/${agent.port}/${enc(agent.name)}") } },
+                    onPairQr = { qr -> pairing { nav.navigate("pair/${enc(qr.host)}/${qr.port}/${enc(qr.name)}?code=${qr.code}&fp=${qr.fp}") } },
                     onOpen = { id ->
                         prefs.edit().putString(LAST_PC, id).apply()
                         nav.navigate("pc/$id")
@@ -103,5 +124,6 @@ fun PcRemoteApp(app: PcRemoteApplication) {
                 )
             }
         }
+    }
     }
 }

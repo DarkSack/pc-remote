@@ -67,6 +67,14 @@ android {
         }
     }
 
+    // "play" cobra Pro por Google Play; "interna" es el APK repartido a mano (dist/), con Pro incluido
+    // porque fuera de la tienda no se puede cobrar por Google Play.
+    flavorDimensions += "canal"
+    productFlavors {
+        create("interna") { dimension = "canal" }
+        create("play") { dimension = "canal" }
+    }
+
     // Built-in Kotlin takes its JVM target from here.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -128,6 +136,9 @@ dependencies {
 
     // Debug-only Compose tooling.
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Pro: compra única por Google Play (solo el canal "play").
+    "playImplementation"("com.android.billingclient:billing-ktx:9.1.0")
 
     // JVM unit tests for logic that does not need a device (QR parsing, WoL packets).
     testImplementation("junit:junit:4.13.2")

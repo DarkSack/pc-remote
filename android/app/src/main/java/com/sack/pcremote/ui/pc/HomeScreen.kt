@@ -26,6 +26,7 @@ import com.sack.pcremote.net.WakeOnLan
 import com.sack.pcremote.net.friendlyMessage
 import com.sack.pcremote.session.PcSession
 import com.sack.pcremote.ui.components.*
+import com.sack.pcremote.pro.LocalPro
 import kotlinx.coroutines.launch
 
 // ══════════════════════════════════════════════════════════════
@@ -51,6 +52,7 @@ private val POWER = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
+    val pro = LocalPro.current
     val state by vm.state.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
@@ -233,20 +235,21 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
             }
 
             // 4 · Tools
+            val proBadge = if (pro.active) null else "Pro"
             full { SectionHeader("Herramientas") }
             tool(Icons.AutoMirrored.Outlined.ScreenShare, "Pantalla remota", "Ver el PC y controlarlo",
-                enabled = connected, badge = feature("screen")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Screen) }
+                enabled = connected, badge = proBadge ?: feature("screen")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Screen) }
             tool(Icons.Outlined.QueryStats, "Monitor", "Gráficas y hardware", enabled = stats != null) { open(Routes.Monitor) }
             tool(Icons.AutoMirrored.Outlined.ListAlt, "Procesos", "Qué consume y cerrarlo", enabled = connected) { open(Routes.Processes) }
             tool(Icons.Outlined.Lan, "Red", "Interfaces, ping, conexiones", enabled = connected) { open(Routes.Network) }
             tool(Icons.Outlined.Folder, "Archivos", "Explorar y transferir",
-                enabled = connected, badge = feature("files")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Files) }
+                enabled = connected, badge = proBadge ?: feature("files")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Files) }
             tool(Icons.Outlined.Terminal, "Terminal", "PowerShell en el PC",
-                enabled = connected, badge = feature("terminal")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Terminal) }
-            tool(Icons.Outlined.ContentPaste, "Portapapeles", "Historial, imágenes incluidas", enabled = connected) { open(Routes.Clipboard) }
+                enabled = connected, badge = proBadge ?: feature("terminal")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Terminal) }
+            tool(Icons.Outlined.ContentPaste, "Portapapeles", "Historial, imágenes incluidas", enabled = connected, badge = proBadge) { open(Routes.Clipboard) }
             tool(Icons.Outlined.Notifications, "Notificaciones", "Las que muestra Windows",
-                enabled = connected, badge = feature("notifications")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Notifications) }
-            tool(Icons.Outlined.Extension, "Plugins", plugins?.let { p -> "${p.plugins.count { it.enabled }} activos" } ?: "Acciones propias", enabled = connected) { open(Routes.Plugins) }
+                enabled = connected, badge = proBadge ?: feature("notifications")?.takeIf { !it.enabled }?.let { "Desactivado" }) { open(Routes.Notifications) }
+            tool(Icons.Outlined.Extension, "Plugins", plugins?.let { p -> "${p.plugins.count { it.enabled }} activos" } ?: "Acciones propias", enabled = connected, badge = proBadge) { open(Routes.Plugins) }
         }
     }
 

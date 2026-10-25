@@ -26,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import com.sack.pcremote.PcRemoteApplication
 import com.sack.pcremote.session.PcSession
 import com.sack.pcremote.ui.screen.RemoteScreen
+import com.sack.pcremote.pro.LocalPro
 
 // ══════════════════════════════════════════════════════════════
 // El Command Center de un PC. Cinco destinos principales; todo lo
@@ -56,6 +57,9 @@ object Routes {
     const val Notifications = "notifications"
     /** Full screen: no navigation bar. */
     const val Screen = "screen"
+
+    /** Screens that need Pro. */
+    val Pro = setOf(Screen, Files, Terminal, Clipboard, Notifications, Plugins)
 }
 
 @Composable
@@ -79,6 +83,8 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
     val snackbar = remember { SnackbarHostState() }
+    val pro = LocalPro.current
+    val open: (String) -> Unit = { route -> if (route in Routes.Pro && !pro.active) pro.offer() else nav.navigate(route) }
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
     NavigationSuiteScaffold(
@@ -98,12 +104,12 @@ fun PcScaffold(deviceId: String, onExit: () -> Unit, onUnpaired: () -> Unit) {
     ) {
         Box(Modifier.fillMaxSize()) {
             NavHost(nav, startDestination = Tab.Home.route) {
-                composable(Tab.Home.route) { HomeScreen(vm, open = nav::navigate, onSwitchPc = onExit) }
-                composable(Tab.Control.route) { ControlScreen(vm, openScreen = { nav.navigate(Routes.Screen) }) }
+                composable(Tab.Home.route) { HomeScreen(vm, open = open, onSwitchPc = onExit) }
+                composable(Tab.Control.route) { ControlScreen(vm, openScreen = { open(Routes.Screen) }) }
                 composable(Tab.Apps.route) { AppsScreen(vm) }
                 composable(Tab.Activity.route) { ActivityScreen(vm) }
                 composable(Tab.Settings.route) {
-                    SettingsScreen(vm, onSwitchPc = onExit, onUnpaired = { vm.unpair(); onUnpaired() }, open = nav::navigate)
+                    SettingsScreen(vm, onSwitchPc = onExit, onUnpaired = { vm.unpair(); onUnpaired() }, open = open)
                 }
                 val back: () -> Unit = { nav.popBackStack() }
                 composable(Routes.Monitor) { MonitorScreen(vm, back) }
