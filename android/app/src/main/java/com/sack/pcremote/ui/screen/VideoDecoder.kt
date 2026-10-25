@@ -59,9 +59,10 @@ class VideoDecoder(
             // Behind (slow decoder, burst after a stall): skip to the next key frame.
             if (pending.size > 8) {
                 pending.clear()
-                if (!keyFrame) { askKeyFrame(); dropping = true; return }
+                if (!keyFrame) { Log.d(TAG, "Behind; waiting for a key frame"); dropping = true }
             }
-            if (dropping && !keyFrame) return
+            // Keep asking: a single request can be lost or land inside the 500 ms throttle.
+            if (dropping && !keyFrame) { askKeyFrame(); return }
             dropping = false
             pending.add(Frame(bytes, keyFrame, timestampUs))
         }
