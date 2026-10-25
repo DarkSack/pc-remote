@@ -2,6 +2,7 @@ package com.sack.pcremote.session
 
 import android.app.Application
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -23,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.net.Inet4Address
 
 // ══════════════════════════════════════════════════════════════
 // Una sesión con un PC: la conexión (AgentClient) y el estado que
@@ -36,11 +38,13 @@ import kotlinx.serialization.json.put
 //   - onForeground(): cancela el cierre diferido y comprueba que el
 //     socket siga vivo (ensureAlive) o reintenta ya, sin esperar backoff.
 //   - onBackground(): cierra la conexión tras 30 s en segundo plano.
-//   - Si falla dos veces seguidas, busca el PC por la huella de su
-//     certificado: primero por mDNS y, si no aparece en otra dirección,
-//     recorriendo la subred del móvil (LanScan). Si cambió de IP, guarda
-//     la nueva y reconecta.
-//   - Red de vuelta (Wi-Fi) → reintento inmediato.
+//   - En cuanto falla, busca el PC por la huella de su certificado:
+//     primero por mDNS y, si no aparece en otra dirección, recorriendo la
+//     subred del móvil y la última del PC (LanScan). Si cambió de IP,
+//     guarda la nueva y reconecta.
+//   - El móvil cambió de red o de IP → comprueba el socket ya (un ping) o
+//     reintenta sin esperar el backoff. El PC cierra solo la conexión que
+//     quedó colgada en la IP vieja (código 4003) cuando entra la nueva.
 // ══════════════════════════════════════════════════════════════
 
 /** How long the PC connection survives with the app in the background. */
@@ -107,8 +111,25 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
     private var localEventId = -1L
 
     private val connectivity = app.getSystemService(ConnectivityManager::class.java)
+
+    /** Default network and the phone's IPv4 on it, as last seen; null until the first callback. */
+    private var lastLink: String? = null
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) { client?.reconnectNow() }
+        override fun onAvailable(network: Network) = onLink(network, connectivity?.getLinkProperties(network))
+        override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) = onLink(network, props)
+    }
+
+    /** Another network, or a new IP on the same one; DNS or route updates alone are ignored. */
+    private fun onLink(network: Network, props: LinkProperties?) {
+        val ipv4 = props?.linkAddresses?.firstOrNull { it.address is Inet4Address }?.address?.hostAddress
+        val link = "$network/$ipv4"
+        val previous = lastLink
+        lastLink = link
+        if (previous != null && previous != link) {
+            Log.i("PcSession", "Network changed ($previous → $link)")
+            client?.onNetworkChanged()
+        }
     }
 
     init {
@@ -117,7 +138,9 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
         if (c != null) {
             viewModelScope.launch { c.state.collectLatest { onState(it) } }
             viewModelScope.launch {
-                c.failures.collect { n -> if (n >= 2 && rediscovery?.isActive != true) rediscover() }
+                // From the first failure: when the PC changed IP, its new announcement is
+                // already out (~3 s), and mDNS finds it while the client retries.
+                c.failures.collect { n -> if (n >= 1 && rediscovery?.isActive != true) rediscover() }
             }
         }
     }
@@ -296,7 +319,7 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
                 // every backoff step, so at most once every 2 minutes (or when asked).
                 val scanned = if (viaMdns == null && (forceScan || System.currentTimeMillis() - lastScanAt > SCAN_EVERY_MS)) {
                     lastScanAt = System.currentTimeMillis()
-                    LanScan.find(getApplication(), cur.agentPort, fp, skip = cur.agentHost)
+                    LanScan.find(getApplication(), cur.agentPort, fp, previous = cur.agentHost)
                 } else null
                 val (host, port) = viaMdns?.let { it.host to it.port }
                     ?: scanned?.let { it to cur.agentPort }

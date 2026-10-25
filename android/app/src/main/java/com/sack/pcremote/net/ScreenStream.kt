@@ -156,6 +156,8 @@ class ScreenStream(private val client: AgentClient) {
                 is Outcome.Fatal -> { _state.value = ScreenState.Failed(outcome.message); return }
                 is Outcome.Retry -> {
                     Log.i(TAG, "Screen socket ended: ${outcome.message}")
+                    // It was showing the screen: a drop (new IP, Wi-Fi hiccup) gets the quick retry again.
+                    if (_state.value == ScreenState.Streaming) attempt = 0
                     attempt++
                     delay(minOf(500L * attempt, 4000L))
                 }

@@ -157,6 +157,10 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         _app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(_settings.Session.PingIntervalSeconds),
+            // A phone that changed network leaves its old socket half-open: without a
+            // timeout it lived until TCP gave up, minutes later, with its session, its
+            // screen capture and any button it held still alive on the PC.
+            KeepAliveTimeout = TimeSpan.FromSeconds(_settings.Session.PingIntervalSeconds),
         });
 
         _app.Map("/ws", HandleWebSocket);
@@ -269,6 +273,9 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
 
     /// <summary>Close code of a module socket whose protocol session ended (not a revoke: 4001).</summary>
     public const WebSocketCloseStatus SessionEndedCloseStatus = (WebSocketCloseStatus)4002;
+
+    /// <summary>Close code of an older connection of a phone that just authenticated again.</summary>
+    public const WebSocketCloseStatus ReplacedCloseStatus = (WebSocketCloseStatus)4003;
 
     /// <summary>Time the phone has to present its ticket after the socket opens.</summary>
     private static readonly TimeSpan TicketTimeout = TimeSpan.FromSeconds(10);
@@ -639,6 +646,11 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         }
         conn.Session = session;
         _devices.TouchLastSeen(device.Id);
+
+        // The app keeps one connection per PC, so an older one is a socket left behind
+        // (the phone changed IP or Wi-Fi). Closing it now ends its session, its screen
+        // socket and any button or key it held, instead of waiting for the keep-alive.
+        _ = _connections.CloseDeviceAsync(device.Id, ReplacedCloseStatus, "Replaced by a new connection", except: conn.Tracked.Id);
         _logger.LogInformation("Authenticated {Name} from {Ip} → session {Sess}",
             device.Name, conn.ClientIp, Short(session.SessionId));
         _activity.Add("connection", $"{device.Name} se conectó", conn.ClientIp, "success");

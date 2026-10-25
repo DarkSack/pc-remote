@@ -93,3 +93,29 @@ public class SessionManagerTests
         Assert.NotNull(sessions.Get(b.SessionId));
     }
 }
+
+public class ConnectionManagerTests
+{
+    private static System.Net.WebSockets.WebSocket Socket() =>
+        System.Net.WebSockets.WebSocket.CreateFromStream(new MemoryStream(), isServer: true, subProtocol: null, keepAliveInterval: Timeout.InfiniteTimeSpan);
+
+    [Fact]
+    public async Task A_new_login_closes_the_older_connections_of_that_phone_only()
+    {
+        var conns = new PcRemote.Core.Server.ConnectionManager();
+        var old = conns.Register(Socket(), "192.168.1.20");
+        var oldScreen = conns.Register(Socket(), "192.168.1.20", "screen");
+        var fresh = conns.Register(Socket(), "192.168.1.31");
+        var tablet = conns.Register(Socket(), "192.168.1.40");
+        old.DeviceId = oldScreen.DeviceId = fresh.DeviceId = "phone";
+        tablet.DeviceId = "tablet";
+
+        var closed = await conns.CloseDeviceAsync("phone", PcRemote.Core.Server.WebSocketServer.ReplacedCloseStatus, "Replaced", except: fresh.Id);
+
+        Assert.Equal(2, closed);
+        Assert.Equal(System.Net.WebSockets.WebSocketState.CloseSent, old.Socket.State);
+        Assert.Equal(System.Net.WebSockets.WebSocketState.CloseSent, oldScreen.Socket.State);
+        Assert.Equal(System.Net.WebSockets.WebSocketState.Open, fresh.Socket.State);
+        Assert.Equal(System.Net.WebSockets.WebSocketState.Open, tablet.Socket.State);
+    }
+}

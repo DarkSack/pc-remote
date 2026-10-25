@@ -2,6 +2,7 @@ package com.sack.pcremote.net
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -38,10 +39,16 @@ object LanScan {
     private const val HANDSHAKE_TIMEOUT_MS = 2500
     private const val PARALLEL = 64
 
-    /** The phone's IPv4 on the active network and its prefix (e.g. 192.168.1.37/24), or null. */
+    /**
+     * The phone's IPv4 on the active network and its prefix (e.g. 192.168.1.37/24), or
+     * null. Only on Wi-Fi or cable: on mobile data the "subnet" is the carrier's.
+     */
     fun phoneSubnet(context: Context): Pair<Inet4Address, Int>? {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val props = cm.getLinkProperties(cm.activeNetwork) ?: return null
+        val network = cm.activeNetwork ?: return null
+        val caps = cm.getNetworkCapabilities(network) ?: return null
+        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return null
+        val props = cm.getLinkProperties(network) ?: return null
         return props.linkAddresses
             .firstOrNull { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isLinkLocalAddress }
             ?.let { (it.address as Inet4Address) to it.prefixLength }
@@ -56,26 +63,31 @@ object LanScan {
     }
 
     /**
-     * The address of the agent with certificate [fingerprintHex] on the phone's subnet,
-     * or null. Big subnets are narrowed to the phone's /24 (a /16 would be 65k probes).
+     * The address of the agent with certificate [fingerprintHex], or null. Looks in the
+     * phone's subnet (narrowed to its /24: a /16 would be 65k probes) and, when the PC's
+     * [previous] address is a private one elsewhere (PC on cable, phone on another
+     * Wi-Fi subnet of the same house), in that /24 too. Nearest to [previous] first:
+     * DHCP tends to hand out a neighbour. [previous] itself is never the answer.
      */
-    suspend fun find(context: Context, port: Int, fingerprintHex: String, skip: String? = null): String? {
+    suspend fun find(context: Context, port: Int, fingerprintHex: String, previous: String? = null): String? {
         val (phone, prefix) = phoneSubnet(context) ?: return null
         val bits = prefix.coerceIn(24, 30)
-        val mask = -1 shl (32 - bits)
-        val base = toInt(phone) and mask
         val own = toInt(phone)
-        val hosts = (1 until (1 shl (32 - bits)) - 1).map { base + it }.filter { it != own }
+        val last = previous?.let(::parseIpv4)?.takeIf(::isPrivate)
+        val near = last ?: own
+        val hosts = (range(own, bits) + (last?.let { range(it, 24) } ?: emptyList()))
+            .distinct()
+            .filter { it != own && it != last }
+            .sortedBy { kotlin.math.abs(it.toLong() - near.toLong()) }
 
-        Log.i(TAG, "Scanning ${hosts.size} hosts around ${phone.hostAddress}/$bits:$port")
+        Log.i(TAG, "Scanning ${hosts.size} hosts around ${phone.hostAddress}/$bits${previous?.let { " and $it" } ?: ""}:$port")
         val gate = Semaphore(PARALLEL)
         return withContext(Dispatchers.IO) {
             coroutineScope {
                 // Ordered by distance to the phone's address: DHCP tends to hand out neighbours.
-                hosts.sortedBy { kotlin.math.abs(it - own) }
-                    .map { ip -> async { gate.withPermit { probe(fromInt(ip), port, fingerprintHex) } } }
+                hosts.map { ip -> async { gate.withPermit { probe(fromInt(ip), port, fingerprintHex) } } }
                     .awaitAll()
-                    .firstOrNull { it != null && it != skip }
+                    .firstOrNull { it != null }
             }
         }
     }
@@ -109,6 +121,23 @@ object LanScan {
                 override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             }), null)
         }
+    }
+
+    /** "192.168.1.20" → its int; null for anything else (a host name is not looked up). */
+    internal fun parseIpv4(s: String): Int? {
+        val parts = s.split('.')
+        if (parts.size != 4) return null
+        return parts.fold(0) { acc, p -> (acc shl 8) or (p.toIntOrNull()?.takeIf { it in 0..255 } ?: return null) }
+    }
+
+    /** 10/8, 172.16/12 or 192.168/16: never scan someone else's public range. */
+    internal fun isPrivate(ip: Int): Boolean =
+        ip ushr 24 == 10 || ip ushr 20 == (172 shl 4 or 1) || ip ushr 16 == (192 shl 8 or 168)
+
+    /** Every host address of the /[bits] around [ip] (network and broadcast left out). */
+    private fun range(ip: Int, bits: Int): List<Int> {
+        val base = ip and (-1 shl (32 - bits))
+        return (1 until (1 shl (32 - bits)) - 1).map { base + it }
     }
 
     private fun toInt(a: Inet4Address): Int = a.address.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xff) }

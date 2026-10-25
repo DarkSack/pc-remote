@@ -133,11 +133,23 @@ class AgentClient(initial: AgentCredentials) {
         openSocket(initial = _state.value == ConnectionState.DISCONNECTED || _state.value == ConnectionState.FAILED)
     }
 
-    /** Network back (Wi-Fi reconnected): only acts if we are waiting out a backoff delay. */
-    @Synchronized
-    fun reconnectNow() {
-        if (_state.value != ConnectionState.RECONNECTING || reconnectJob?.isActive != true) return
-        retryNow()
+    /**
+     * The phone changed network or IP (another Wi-Fi, Wi-Fi back, new DHCP lease). A
+     * socket opened from the old address is dead even if it looks open: one ping
+     * settles it now instead of two missed heartbeats (~10 s), and a pending backoff
+     * is skipped. Resting states (disconnected in the background, failed) stay put.
+     */
+    fun onNetworkChanged() {
+        when (_state.value) {
+            ConnectionState.CONNECTED -> scope.launch {
+                if (!ping(3000)) {
+                    Log.i(TAG, "No pong after a network change; reconnecting")
+                    forceReconnect(AgentError.Unresponsive)
+                }
+            }
+            ConnectionState.RECONNECTING -> retryNow()
+            else -> {}
+        }
     }
 
     /**

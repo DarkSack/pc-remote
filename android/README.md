@@ -67,10 +67,15 @@ Conexión:
 - Al volver a la app comprueba que el socket siga vivo (ping) y, si no,
   reconecta **al momento**, sin esperar el backoff. Un latido cada 5 s detecta
   conexiones medio abiertas (Wi-Fi que se durmió, PC suspendido).
-- Tras dos fallos busca el PC por la huella de su certificado: primero por
-  mDNS y, si no aparece en otra dirección, recorriendo la subred del móvil
-  (como mucho cada 2 min, o al pulsar «Reintentar»). Si cambió de IP, se
-  mueve solo a la nueva.
+- En cuanto falla busca el PC por la huella de su certificado: primero por
+  mDNS y, si no aparece en otra dirección, recorriendo la subred del móvil y la
+  última del PC si es otra subred privada (como mucho cada 2 min, o al pulsar
+  «Reintentar»; nunca con datos móviles). Si cambió de IP, se mueve solo a la nueva.
+- Si el **móvil** cambia de red o de IP (otra Wi-Fi, la Wi-Fi vuelve, otra
+  concesión DHCP), comprueba el socket al momento con un ping o reintenta sin
+  esperar el backoff. El PC cierra la conexión que quedó colgada en la IP vieja
+  en cuanto entra la nueva (código 4003), así no se queda un botón pulsado ni
+  una pantalla remota capturando para nadie.
 - Si en la dirección guardada contesta **otro** PC (otro certificado), también
   busca el suyo antes de rendirse.
 - Errores legibles («El PC no respondió — ¿está encendido y con PC Remote

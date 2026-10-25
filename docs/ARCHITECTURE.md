@@ -130,7 +130,15 @@ FAILED (sin reintentos): auth rechazada, dispositivo revocado (4001) o
 certificado distinto del emparejado.
 ```
 
-Backoff: `1 → 2 → 4 → 8 → 16 → 30 s (tope)`. OkHttp envía ping cada 15 s.
+Backoff: `1 → 2 → 4 → 8 → 16 → 30 s (tope)`. Latido de la app cada 5 s (dos sin
+respuesta = caída); OkHttp envía ping cada 15 s y el agente corta un socket cuyo
+pong no llega en 15 s.
+
+Cambios de IP: el agente vuelve a anunciarse por mDNS al cambiar la suya; la app
+lo busca por la huella del certificado desde el primer fallo (mDNS y, si no,
+recorriendo su subred y la última del PC), y ante un cambio de red o de IP del
+móvil comprueba el socket al momento. Cuando un móvil se autentica de nuevo, el
+agente cierra sus conexiones anteriores con 4003.
 
 ## Tipos de mensaje
 

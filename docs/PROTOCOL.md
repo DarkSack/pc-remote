@@ -64,7 +64,8 @@ ninguno.**
 ```
 
 Además, el servidor manda frames de *keep-alive* de WebSocket cada 15 s
-(`Session.PingIntervalSeconds`), y la app Android usa los ping de OkHttp.
+(`Session.PingIntervalSeconds`) y corta la conexión si el pong no llega en otros
+15 s, y la app Android usa los ping de OkHttp.
 
 ## 5 · Bootstrap: emparejamiento y autenticación
 
@@ -89,6 +90,7 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | 1009 | Frame demasiado grande: 16 KB antes de autenticar, 4 MB después. |
 | 4001 | Dispositivo revocado o borrado (en caliente o al intentar autenticar). **El cliente no debe reconectar.** |
 | 4002 | (Sockets de módulo) La sesión de control de la que salió el ticket terminó. El cliente puede pedir otro ticket al reconectar. |
+| 4003 | El mismo dispositivo acaba de autenticarse en otra conexión (normalmente el móvil cambió de IP o de Wi-Fi y esta quedó colgada). Se cierran también sus sockets de módulo. |
 
 ## Códigos de error
 

@@ -37,10 +37,10 @@ public sealed class ConnectionManager
         }
     }
 
-    /// <summary>Closes every live connection authenticated as <paramref name="deviceId"/>.</summary>
-    public async Task<int> CloseDeviceAsync(string deviceId, WebSocketCloseStatus status, string reason)
+    /// <summary>Closes every live connection authenticated as <paramref name="deviceId"/>, but <paramref name="except"/>.</summary>
+    public async Task<int> CloseDeviceAsync(string deviceId, WebSocketCloseStatus status, string reason, Guid? except = null)
     {
-        var targets = _conns.Values.Where(c => c.DeviceId == deviceId).ToArray();
+        var targets = _conns.Values.Where(c => c.DeviceId == deviceId && c.Id != except).ToArray();
         await Task.WhenAll(targets.Select(c => c.CloseAsync(status, reason))).ConfigureAwait(false);
         return targets.Length;
     }
