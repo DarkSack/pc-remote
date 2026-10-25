@@ -76,6 +76,7 @@ fun ClipboardScreen(vm: PcSession, back: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val items = remember { mutableStateListOf<ClipItem>() }
+    val listState = rememberNewestFirstListState(items.firstOrNull()?.id)
     var loaded by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<RequestException?>(null) }
@@ -179,7 +180,7 @@ fun ClipboardScreen(vm: PcSession, back: () -> Unit) {
                         !enabled -> EmptyState(Icons.Outlined.ContentPasteOff, "Historial desactivado", "El agente del PC tiene el historial del portapapeles apagado (Clipboard:HistorySize = 0).")
                         items.isEmpty() -> EmptyState(Icons.Outlined.ContentPaste, "Nada copiado todavía",
                             "Copia algo en el PC (texto, una captura, archivos) y aparecerá aquí al instante.")
-                        else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        else -> LazyColumn(state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(items, key = { it.id }) { item ->
                                 val thumb = remember(item.id) { decodeB64Image(item.thumbnail) }
                                 ClipCard(item, thumb, onClick = { open(item) },

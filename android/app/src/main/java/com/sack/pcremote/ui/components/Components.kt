@@ -5,6 +5,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -219,4 +221,15 @@ fun IconTile(icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 40.dp,
     Box(modifier.size(size).clip(MaterialTheme.shapes.small).background(container), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(size * 0.55f))
     }
+}
+
+/**
+ * State for a newest-first list fed live. LazyColumn keeps the old first item in place when
+ * one is inserted above it, so a new arrival lands off screen: if the user was at the top, scroll up to it.
+ */
+@Composable
+fun rememberNewestFirstListState(firstKey: Any?): LazyListState {
+    val state = rememberLazyListState()
+    LaunchedEffect(firstKey) { if (state.firstVisibleItemIndex <= 1) state.animateScrollToItem(0) }
+    return state
 }

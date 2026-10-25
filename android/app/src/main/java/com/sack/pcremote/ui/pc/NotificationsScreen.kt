@@ -29,6 +29,7 @@ fun NotificationsScreen(vm: PcSession, back: () -> Unit) {
     val n by vm.notifications.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberNow(30_000)
+    val listState = rememberNewestFirstListState(n.items.firstOrNull()?.id)
 
     LaunchedEffect(state) { if (state == ConnectionState.CONNECTED) vm.refreshNotifications() }
 
@@ -56,7 +57,7 @@ fun NotificationsScreen(vm: PcSession, back: () -> Unit) {
                         "Sin notificaciones",
                         "Aquí aparecen las notificaciones que muestra Windows. Las nuevas llegan mientras la app está abierta y conectada.",
                     )
-                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    else -> LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(bottom = 24.dp)) {
                         items(n.items, key = { it.id }) { NotificationRow(it, now) }
                     }
                 }
