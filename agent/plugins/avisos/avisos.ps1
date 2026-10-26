@@ -1,4 +1,4 @@
-﻿# PC Remote · Avisos en el PC.
+﻿# SackDesk · Avisos en el PC.
 #   avisos.ps1 notificacion|mensaje|voz <texto>
 #   avisos.ps1 sonar <segundos>
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
@@ -13,7 +13,7 @@ switch ("$($args[0])") {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
         $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-        $xml.LoadXml("<toast><visual><binding template='ToastGeneric'><text>PC Remote</text><text>$([Security.SecurityElement]::Escape($texto))</text></binding></visual></toast>")
+        $xml.LoadXml("<toast><visual><binding template='ToastGeneric'><text>SackDesk</text><text>$([Security.SecurityElement]::Escape($texto))</text></binding></visual></toast>")
         # Se muestra con la identidad de PowerShell: una app sin registrar no puede enviar notificaciones.
         $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show([Windows.UI.Notifications.ToastNotification]::new($xml))

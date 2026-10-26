@@ -3,7 +3,7 @@
   "description": "Plan de energía, estado de la batería y mantener el PC despierto un rato.",
   "icon": "battery",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "ver-plan",

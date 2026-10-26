@@ -1,4 +1,4 @@
-﻿# PC Remote · Bluetooth.
+﻿# SackDesk · Bluetooth.
 #   bluetooth.ps1 estado | encender | apagar | dispositivos
 # La radio se maneja con Windows.Devices.Radios (lo mismo que el botón del centro de actividades).
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }

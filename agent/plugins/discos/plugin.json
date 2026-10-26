@@ -3,7 +3,7 @@
   "description": "Espacio libre, salud de los discos y qué carpetas ocupan más.",
   "icon": "storage",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "espacio",

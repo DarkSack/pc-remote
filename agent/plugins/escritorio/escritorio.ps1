@@ -1,4 +1,4 @@
-﻿# PC Remote · Escritorio y apariencia.
+﻿# SackDesk · Escritorio y apariencia.
 #   escritorio.ps1 escritorio | tema Alternar|Oscuro|Claro | explorer
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

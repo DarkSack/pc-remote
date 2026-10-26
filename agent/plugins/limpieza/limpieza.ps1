@@ -1,4 +1,4 @@
-﻿# PC Remote · Limpieza.
+﻿# SackDesk · Limpieza.
 #   limpieza.ps1 resumen | temporales | papelera | descargas
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

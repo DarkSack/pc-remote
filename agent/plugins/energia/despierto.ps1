@@ -1,4 +1,4 @@
-﻿# PC Remote · Energía: mantener el PC despierto.
+﻿# SackDesk · Energía: mantener el PC despierto.
 #   despierto.ps1 <minutos> → no se suspende ni apaga la pantalla durante ese tiempo
 #   despierto.ps1 0         → cancelar
 # Un PowerShell oculto pide SetThreadExecutionState y duerme; al terminar (o al matarlo)

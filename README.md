@@ -1,6 +1,10 @@
-# PC Remote
+# SackDesk
 
-Controla tu PC Windows desde un teléfono Android en la misma red local: **pantalla remota** (verla y manejarla, al estilo de RustDesk), energía, monitor de hardware (CPU, RAM, GPU, discos, red), ratón, teclado, multimedia, apps, procesos, historial del portapapeles (con imágenes), archivos, terminal, actividad y **plugins**.
+> Antes se llamaba PC Remote. El repositorio y los proyectos (`PcRemote.*`,
+> `com.sack.pcremote` en el código) conservan el nombre viejo; lo que ve el
+> usuario, la carpeta de datos y el id de Play ya son de SackDesk.
+
+Controla tu PC Windows desde un teléfono Android, en la misma red o desde cualquier otra: **pantalla remota** (verla y manejarla, al estilo de RustDesk), energía, monitor de hardware (CPU, RAM, GPU, discos, red), ratón, teclado, multimedia, apps, procesos, historial del portapapeles (con imágenes), archivos, terminal, actividad y **plugins**.
 
 Monorepo con dos partes:
 
@@ -42,7 +46,7 @@ pc-remote/
 ├── branding/                             # logo (SVG) y render.cs → .ico y PNG
 ├── docs/
 ├── agent/                                # .NET 10
-│   ├── publish.ps1                       # → dist\PcRemote.exe (un solo ejecutable)
+│   ├── publish.ps1                       # → dist\SackDesk.exe (un solo ejecutable)
 │   ├── PcRemote.Agent.slnx
 │   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
 │   ├── global.json
@@ -79,15 +83,15 @@ pc-remote/
 powershell -ExecutionPolicy Bypass -File agent/publish.ps1
 ```
 
-y reparte `dist\PcRemote.exe` (~70 MB). Doble clic y **se instala solo**, para tu
-usuario y sin pedir admin: queda en `%LOCALAPPDATA%\Programs\PcRemote`, en el menú
+y reparte `dist\SackDesk.exe` (~70 MB). Doble clic y **se instala solo**, para tu
+usuario y sin pedir admin: queda en `%LOCALAPPDATA%\Programs\SackDesk`, en el menú
 Inicio, arranca con Windows (se quita en el menú de la bandeja) y aparece en
 Configuración › Aplicaciones para desinstalarlo. Abrir una versión nueva la
 actualiza: cierra la anterior y conserva los móviles emparejados. La primera vez
 se abre el panel con el QR para emparejar; abrirlo otra vez con el agente ya en
 marcha solo abre el panel. Desinstalar sin preguntas (winget):
-`PcRemote.exe --uninstall --quiet`. Si quieres cambiar la configuración, pon un
-`appsettings.json` junto al exe o en `%LOCALAPPDATA%\PcRemote\`.
+`SackDesk.exe --uninstall --quiet`. Si quieres cambiar la configuración, pon un
+`appsettings.json` junto al exe o en `%LOCALAPPDATA%\SackDesk\`.
 
 **Para desarrollar** (SDK de .NET 10, Windows 10 2004 o posterior):
 
@@ -98,7 +102,7 @@ dotnet run --project src/PcRemote.Agent
 
 Aparece un icono en la bandeja. Desde él puedes abrir el **panel web** (`http://localhost:47810/`), que muestra el estado, genera el código de emparejamiento con su QR y permite revocar dispositivos.
 
-Datos en `%LOCALAPPDATA%\PcRemote\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI), `features.json` (funciones y plugins activados), `plugins/` y `logs/`.
+Datos en `%LOCALAPPDATA%\SackDesk\`: `agent.db` (dispositivos), `cert.pfx` + `cert.pass` (certificado TLS; su contraseña va cifrada con DPAPI), `features.json` (funciones y plugins activados), `plugins/` y `logs/`.
 
 La **terminal** y las **notificaciones** vienen apagadas, y los **plugins** nuevos también (el agente trae 23, de pantalla, energía, audio, red, limpieza, winget…): se activan en el panel («Funciones y plugins»), nunca desde el móvil. Ver [`docs/PLUGINS.md`](docs/PLUGINS.md).
 

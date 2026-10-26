@@ -8,7 +8,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Assets\pcremote.ico</ApplicationIcon>
-    <Product>PC Remote</Product>
+    <Product>SackDesk</Product>
+    <!-- What Task Manager and the file properties show. -->
+    <AssemblyTitle>SackDesk</AssemblyTitle>
   </PropertyGroup>
 
   <!-- One-file build: `./publish.ps1` (or dotnet publish -p:PublishProfile=SingleExe).
@@ -49,7 +51,7 @@
 
   <ItemGroup>
     <!-- Defaults live inside the exe; an appsettings.json next to it (or in
-         %LOCALAPPDATA%\PcRemote) only overrides what it sets. -->
+         %LOCALAPPDATA%\SackDesk) only overrides what it sets. -->
     <EmbeddedResource Include="appsettings.json" LogicalName="PcRemote.Agent.appsettings.json" />
     <EmbeddedResource Include="Assets\pcremote.ico" LogicalName="PcRemote.Agent.pcremote.ico" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-﻿# PC Remote · Temporizador de apagado.
+﻿# SackDesk · Temporizador de apagado.
 #   temporizador.ps1 Apagar|Reiniciar|Suspender|Hibernar <minutos>
 #   temporizador.ps1 Estado
 #   temporizador.ps1 Cancelar
@@ -38,7 +38,7 @@ switch ($accion) {
     'Estado' {
         $info = Read-Estado
         if ($info) { "Programado: $($info.accion) a las $(([datetime]::Parse($info.cuando)).ToString('HH:mm')) (faltan $([int][Math]::Ceiling(([datetime]::Parse($info.cuando) - (Get-Date)).TotalMinutes)) min)." }
-        else { 'No hay nada programado desde PC Remote.' }
+        else { 'No hay nada programado desde SackDesk.' }
         exit 0
     }
     'Cancelar' {
@@ -57,7 +57,7 @@ $info = @{ accion = $accion; cuando = $cuando.ToString('o') }
 
 if ($accion -in 'Apagar', 'Reiniciar') {
     $modo = if ($accion -eq 'Apagar') { '/s' } else { '/r' }
-    & shutdown.exe $modo /t ($minutos * 60) /c "Programado desde PC Remote. Se cancela desde el móvil o con: shutdown /a"
+    & shutdown.exe $modo /t ($minutos * 60) /c "Programado desde SackDesk. Se cancela desde el móvil o con: shutdown /a"
     if ($LASTEXITCODE -ne 0) { "shutdown.exe falló (código $LASTEXITCODE)."; exit 1 }
 } else {
     $hibernar = if ($accion -eq 'Hibernar') { '$true' } else { '$false' }

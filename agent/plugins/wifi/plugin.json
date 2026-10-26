@@ -3,7 +3,7 @@
   "description": "Redes guardadas y cercanas, ver la contraseña de una red guardada y conectarse.",
   "icon": "wifi",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "estado",
@@ -51,7 +51,7 @@
       "params": [
         { "id": "red", "label": "Nombre de la red (SSID)", "type": "string", "pattern": "[^\"]{1,32}", "maxLength": 32 }
       ],
-      "confirm": "¿Conectar el PC a «{red}»? Si el móvil no está en esa red, se perderá la conexión con PC Remote.",
+      "confirm": "¿Conectar el PC a «{red}»? Si el móvil no está en esa red, se perderá la conexión con SackDesk.",
       "output": true
     }
   ]

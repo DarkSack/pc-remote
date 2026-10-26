@@ -1,4 +1,4 @@
-﻿# PC Remote · Energía: estado de la batería.
+﻿# SackDesk · Energía: estado de la batería.
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)

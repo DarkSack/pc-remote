@@ -33,11 +33,12 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.sack.pcremote"
+        // The Play listing id: it cannot change after the first upload.
+        applicationId = "com.sack.sackdesk"
         minSdk = 26          // Android 8.0
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.6.1"
         // Relay for PCs the phone cannot reach directly; {s} = first hex digit of the PC's id
         // (same rule as the agent's Relay:Url). Empty turns the relay off.
         buildConfigField("String", "RELAY_URL", "\"wss://r{s}.relay.sackito.online\"")

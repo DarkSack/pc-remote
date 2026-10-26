@@ -3,7 +3,7 @@
   "description": "Abrir en el PC un enlace o una búsqueda escrita en el móvil.",
   "icon": "browser",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "abrir-url",

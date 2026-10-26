@@ -1,9 +1,9 @@
 {
   "name": "Notas rápidas",
-  "description": "Apuntar algo desde el móvil en un archivo de notas del PC (Documentos\\PC Remote\\notas.txt).",
+  "description": "Apuntar algo desde el móvil en un archivo de notas del PC (Documentos\\SackDesk\\notas.txt).",
   "icon": "note",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "apuntar",

@@ -81,7 +81,7 @@ fun DevicesScreen(
             .addOnSuccessListener { barcode ->
                 val payload = QrPayload.parse(barcode.rawValue.orEmpty())
                 if (payload != null) { haptics.confirm(); onPairQr(payload) }
-                else scope.launch { snackbar.showSnackbar("Ese QR no es de PC Remote (o está incompleto).") }
+                else scope.launch { snackbar.showSnackbar("Ese QR no es de SackDesk (o está incompleto).") }
             }
             .addOnFailureListener {
                 scope.launch { snackbar.showSnackbar("No se pudo abrir el escáner. Empareja con el código.") }
@@ -108,7 +108,7 @@ fun DevicesScreen(
                         Icon(painterResource(R.drawable.ic_logo_mark), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("PC Remote")
+                            Text("SackDesk")
                             Text("Personal Command Center", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

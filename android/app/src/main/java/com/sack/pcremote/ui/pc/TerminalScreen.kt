@@ -131,7 +131,7 @@ fun TerminalScreen(vm: PcSession, back: () -> Unit) {
                     e is RequestException && e.code == "FEATURE_DISABLED" -> EmptyState(
                         Icons.Outlined.Terminal,
                         "La terminal está desactivada",
-                        "Por seguridad viene apagada. Actívala en el PC: abre PC Remote desde la bandeja → «Funciones y plugins» → Terminal.",
+                        "Por seguridad viene apagada. Actívala en el PC: abre SackDesk desde la bandeja → «Funciones y plugins» → Terminal.",
                     )
                     e != null && info == null -> ErrorState(AgentError.from(e), onRetry = { error = null; vm.retry() })
                     else -> Column(Modifier.fillMaxSize()) {

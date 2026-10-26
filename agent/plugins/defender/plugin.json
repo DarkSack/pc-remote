@@ -3,7 +3,7 @@
   "description": "Estado del antivirus de Windows, análisis rápido, actualizar firmas y amenazas encontradas.",
   "icon": "security",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "estado",

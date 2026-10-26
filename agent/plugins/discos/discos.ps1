@@ -1,4 +1,4 @@
-﻿# PC Remote · Discos.
+﻿# SackDesk · Discos.
 #   discos.ps1 espacio | salud | carpetas | grandes
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

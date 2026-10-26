@@ -44,7 +44,7 @@ fun NotificationsScreen(vm: PcSession, back: () -> Unit) {
                         Icons.Outlined.NotificationsOff,
                         "Las notificaciones están desactivadas",
                         "Vienen apagadas porque pueden traer mensajes privados o códigos de verificación. " +
-                            "Actívalas en el PC: abre PC Remote desde la bandeja → «Funciones y plugins» → Notificaciones.",
+                            "Actívalas en el PC: abre SackDesk desde la bandeja → «Funciones y plugins» → Notificaciones.",
                         actionLabel = "Comprobar de nuevo", onAction = vm::refreshNotifications,
                     )
                     n.error != null -> EmptyState(

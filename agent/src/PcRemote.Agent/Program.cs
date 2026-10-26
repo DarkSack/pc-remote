@@ -14,17 +14,17 @@ using Serilog;
 namespace PcRemote.Agent;
 
 /// <summary>
-/// Entry point of the PC Remote agent (Windows tray application).
+/// Entry point of the SackDesk agent (Windows tray application).
 ///
 /// Ships as ONE executable (see agent/publish.ps1): the default settings are
 /// embedded, and appsettings.json is only an optional override, next to the
-/// exe or in %LOCALAPPDATA%\PcRemote.
+/// exe or in %LOCALAPPDATA%\SackDesk.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class Program
 {
     /// <summary>Per user: two agents of the same user would fight over the port.</summary>
-    internal const string SingleInstanceMutex = @"Local\PcRemote.Agent";
+    internal const string SingleInstanceMutex = @"Local\SackDesk.Agent";
 
     [STAThread]
     private static int Main()
@@ -89,7 +89,7 @@ internal static class Program
         catch (Exception ex)
         {
             Log.Fatal(ex, "Agent crashed");
-            MessageBox.Show(ex.Message, "PC Remote — error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message, "SackDesk — error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
         finally
@@ -100,7 +100,7 @@ internal static class Program
 
     /// <summary>
     /// Embedded defaults, then appsettings.json next to the exe, then the one in
-    /// %LOCALAPPDATA%\PcRemote. Later files override earlier ones key by key.
+    /// %LOCALAPPDATA%\SackDesk. Later files override earlier ones key by key.
     /// </summary>
     private static IConfiguration BuildConfiguration()
     {
@@ -109,7 +109,7 @@ internal static class Program
         if (embedded is not null) builder.AddJsonStream(embedded);
         builder.AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true, reloadOnChange: false);
         builder.AddJsonFile(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PcRemote", "appsettings.json"),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SackDesk", "appsettings.json"),
             optional: true, reloadOnChange: false);
         return builder.Build();
     }

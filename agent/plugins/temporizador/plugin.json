@@ -3,7 +3,7 @@
   "description": "Apagar, reiniciar, suspender o hibernar dentro de X minutos. Se puede cancelar.",
   "icon": "timer",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "programar",

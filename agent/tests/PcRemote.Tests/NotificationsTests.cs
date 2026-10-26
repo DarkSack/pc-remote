@@ -16,7 +16,7 @@ public class NotificationsTests : IDisposable
     public NotificationsTests()
     {
         Directory.CreateDirectory(_dir);
-        // The two tables PC Remote reads, with the columns Windows 11 uses.
+        // The two tables SackDesk reads, with the columns Windows 11 uses.
         Exec("""
             CREATE TABLE NotificationHandler(RecordId INTEGER PRIMARY KEY, PrimaryId TEXT NOT NULL COLLATE NOCASE, HandlerType TEXT);
             CREATE TABLE Notification([Order] INTEGER NOT NULL PRIMARY KEY, Id INTEGER NOT NULL UNIQUE, HandlerId INTEGER,

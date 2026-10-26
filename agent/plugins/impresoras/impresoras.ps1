@@ -1,4 +1,4 @@
-﻿# PC Remote · Impresoras.
+﻿# SackDesk · Impresoras.
 #   impresoras.ps1 cola | cancelar | prueba
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

@@ -1,4 +1,4 @@
-﻿# PC Remote · Buscar archivos.
+﻿# SackDesk · Buscar archivos.
 #   archivos.ps1 buscar <parte del nombre> | descargas | recientes
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

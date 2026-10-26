@@ -173,7 +173,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         }
         else
         {
-            _app.Map("/", () => Results.Text($"PC Remote agent · v{GetVersion()}", "text/plain"));
+            _app.Map("/", () => Results.Text($"SackDesk agent · v{GetVersion()}", "text/plain"));
         }
 
         await _app.StartAsync(cancellationToken);

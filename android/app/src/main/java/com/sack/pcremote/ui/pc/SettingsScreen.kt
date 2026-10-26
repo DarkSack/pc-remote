@@ -191,7 +191,7 @@ fun SettingsScreen(vm: PcSession, onSwitchPc: () -> Unit, onUnpaired: () -> Unit
             item { SectionHeader("Acerca de") }
             item {
                 SettingsGroup {
-                    InfoRow("PC Remote para Android", BuildConfig.VERSION_NAME)
+                    InfoRow("SackDesk para Android", BuildConfig.VERSION_NAME)
                     InfoRow("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
                     ListItem(
                         headlineContent = { Text("Licencias de código abierto") },

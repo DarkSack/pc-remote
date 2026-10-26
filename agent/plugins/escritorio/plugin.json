@@ -3,7 +3,7 @@
   "description": "Mostrar el escritorio, tema claro u oscuro y reiniciar el Explorador si la barra de tareas se cuelga.",
   "icon": "palette",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "mostrar-escritorio",

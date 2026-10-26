@@ -3,7 +3,7 @@
   "description": "Encontrar archivos por nombre y ver lo último descargado o abierto. Con la ruta, bájalos desde Archivos.",
   "icon": "search",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "buscar",

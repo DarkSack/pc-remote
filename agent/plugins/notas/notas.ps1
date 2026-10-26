@@ -1,10 +1,10 @@
-﻿# PC Remote · Notas rápidas.
+﻿# SackDesk · Notas rápidas.
 #   notas.ps1 apuntar <texto> | ver | abrir
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-$carpeta = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PC Remote'
+$carpeta = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'SackDesk'
 $archivo = Join-Path $carpeta 'notas.txt'
 $utf8 = New-Object Text.UTF8Encoding $true   # con BOM: el Bloc de notas antiguo lo abre bien
 

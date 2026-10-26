@@ -228,7 +228,7 @@ fun FilesScreen(vm: PcSession, back: () -> Unit) {
                 when {
                     e is RequestException && e.code == "FEATURE_DISABLED" -> EmptyState(
                         Icons.Outlined.FolderOff, "Archivos desactivado",
-                        "Actívalo en el PC: PC Remote en la bandeja → «Funciones y plugins» → Archivos.",
+                        "Actívalo en el PC: SackDesk en la bandeja → «Funciones y plugins» → Archivos.",
                     )
                     e != null -> ErrorState(AgentError.from(e).let { if (e is RequestException) AgentError("No se pudo abrir", friendlyMessage(e)) else it },
                         onRetry = { reload++ }, extra = { if (path != null) TextButton(onClick = { go(null) }) { Text("Ir al inicio") } })

@@ -194,7 +194,7 @@ elevación, no puede controlarla ni detectarlo.
 
 ## Descubrimiento (mDNS)
 
-Servicio `_pcremote._tcp`, puerto WSS. Registros TXT: `hostname`, `os`,
+Servicio `_sackdesk._tcp`, puerto WSS. Registros TXT: `hostname`, `os`,
 `version` y `fp` (SHA-256 del certificado TLS). La app usa `fp` para reconocer un
 PC ya emparejado que ha cambiado de IP y actualizar la dirección guardada.
 

@@ -98,7 +98,7 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("Command Center", style = MaterialTheme.typography.titleMedium)
-                            Text("PC Remote", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("SackDesk", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },

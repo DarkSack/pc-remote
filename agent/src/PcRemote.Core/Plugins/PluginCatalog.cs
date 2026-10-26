@@ -252,7 +252,7 @@ public sealed class PluginCatalog
         Version.TryParse(candidate, out var c) && (!Version.TryParse(installed, out var i) || c > i);
 
     private const string Readme = """
-        PC Remote — plugins
+        SackDesk — plugins
         ===================
 
         Cada carpeta con un plugin.json es un plugin. Aparece en el panel
@@ -263,7 +263,7 @@ public sealed class PluginCatalog
         escriben en el móvil se validan y cada uno ocupa exactamente un
         argumento: nunca pasan por una consola.
 
-        PC Remote trae una colección de plugins (pantalla, energía, audio,
+        SackDesk trae una colección de plugins (pantalla, energía, audio,
         red, limpieza, winget…) que se copian aquí desactivados. Puedes
         editarlos: una carpeta que hayas tocado ya no se actualiza sola. Si
         borras una, no vuelve a aparecer.

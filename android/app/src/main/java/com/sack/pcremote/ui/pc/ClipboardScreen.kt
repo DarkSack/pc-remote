@@ -265,7 +265,7 @@ fun ClipboardScreen(vm: PcSession, back: () -> Unit) {
     if (confirmClear) {
         ConfirmDialog(
             title = "¿Vaciar el historial?",
-            text = "Se borra el historial del portapapeles que guarda PC Remote (no lo que está copiado ahora mismo).",
+            text = "Se borra el historial del portapapeles que guarda SackDesk (no lo que está copiado ahora mismo).",
             confirmLabel = "Vaciar",
             icon = Icons.Outlined.DeleteSweep,
             onConfirm = { scope.launch { runCatching { client.call("clipboard", "historyClear") }.onFailure { vm.post(friendlyMessage(it)) } } },

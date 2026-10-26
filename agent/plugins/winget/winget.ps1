@@ -1,4 +1,4 @@
-﻿# PC Remote · Apps con winget.
+﻿# SackDesk · Apps con winget.
 #   winget.ps1 actualizables | actualizar-todo | buscar <texto> | instalar <id> | actualizar <id> | desinstalar <id>
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

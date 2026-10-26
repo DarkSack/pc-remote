@@ -27,11 +27,11 @@ Un plugin nuevo aparece **desactivado**.
 
 Con una función apagada, sus comandos responden `FEATURE_DISABLED` y la app
 muestra cómo activarla. El estado se guarda en
-`%LOCALAPPDATA%\PcRemote\features.json` (junto con el de los plugins).
+`%LOCALAPPDATA%\SackDesk\features.json` (junto con el de los plugins).
 
 ## Carpeta de plugins
 
-`%LOCALAPPDATA%\PcRemote\plugins\` (configurable con `Storage:PluginsPath`).
+`%LOCALAPPDATA%\SackDesk\plugins\` (configurable con `Storage:PluginsPath`).
 El menú de la bandeja tiene «Abrir carpeta de plugins». Al arrancar, el agente
 crea la carpeta con un `LEEME.txt` y copia en ella los plugins incluidos (ver
 abajo).

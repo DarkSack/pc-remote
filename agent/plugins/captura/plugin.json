@@ -1,9 +1,9 @@
 {
   "name": "Captura de pantalla",
-  "description": "Guarda una captura en Imágenes\\PC Remote. Descárgala después desde Archivos.",
+  "description": "Guarda una captura en Imágenes\\SackDesk. Descárgala después desde Archivos.",
   "icon": "screenshot",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "capturar",

@@ -17,7 +17,7 @@ dotnet publish $project -c Release -r $Runtime -p:PublishSingleFile=true -o $sta
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
 
 New-Item -ItemType Directory -Force $Output | Out-Null
-$exe = Join-Path $Output "PcRemote.exe"
+$exe = Join-Path $Output "SackDesk.exe"
 Copy-Item (Join-Path $staging "PcRemote.Agent.exe") $exe -Force
 Remove-Item $staging -Recurse -Force
 

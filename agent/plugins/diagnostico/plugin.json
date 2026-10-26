@@ -3,7 +3,7 @@
   "description": "Cuánto lleva encendido, reinicios y apagados inesperados, errores recientes y programas de inicio.",
   "icon": "troubleshoot",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "encendido",

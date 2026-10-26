@@ -17,7 +17,7 @@ import kotlin.coroutines.resume
 
 // ══════════════════════════════════════════════════════════════
 // mDNS discovery vía NsdManager (built-in Android — sin lib externa).
-// El agente publica _pcremote._tcp con TXT { hostname, os, version, fp }.
+// El agente publica _sackdesk._tcp con TXT { hostname, os, version, fp }.
 //
 // Las resoluciones van DE UNA EN UNA. Antes de Android 14, NsdManager
 // solo admite una resolveService a la vez: la segunda falla con
@@ -115,7 +115,7 @@ class Discovery(private val context: Context) {
     }
 
     companion object {
-        const val SERVICE_TYPE = "_pcremote._tcp."
+        const val SERVICE_TYPE = "_sackdesk._tcp."
         private const val RESOLVE_TIMEOUT_MS = 5_000L
     }
 }

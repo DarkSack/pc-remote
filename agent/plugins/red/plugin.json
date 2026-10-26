@@ -3,7 +3,7 @@
   "description": "IP pública, test de velocidad, traceroute, DNS y puertos abiertos.",
   "icon": "public",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "ip-publica",

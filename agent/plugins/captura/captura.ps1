@@ -1,10 +1,10 @@
-﻿# PC Remote · Captura de pantalla.
+﻿# SackDesk · Captura de pantalla.
 #   captura.ps1 "Todas las pantallas" | "Pantalla principal" | lista | abrir
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-$carpeta = Join-Path ([Environment]::GetFolderPath('MyPictures')) 'PC Remote'
+$carpeta = Join-Path ([Environment]::GetFolderPath('MyPictures')) 'SackDesk'
 [void](New-Item -ItemType Directory -Force -Path $carpeta)
 
 switch ("$($args[0])") {

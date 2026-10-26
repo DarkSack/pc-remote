@@ -168,7 +168,7 @@ internal sealed class StartupEvents(ActivityLog activity) : IHostedService
         var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
         if (uptime < TimeSpan.FromMinutes(10))
             activity.Add("power", "PC encendido", $"Hace {Math.Max(1, (int)uptime.TotalMinutes)} min", "success");
-        activity.Add("agent", "Agente de PC Remote iniciado", $"v{typeof(AgentHost).Assembly.GetName().Version?.ToString(3)}");
+        activity.Add("agent", "Agente de SackDesk iniciado", $"v{typeof(AgentHost).Assembly.GetName().Version?.ToString(3)}");
         return Task.CompletedTask;
     }
 

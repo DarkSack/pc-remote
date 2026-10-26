@@ -1,4 +1,4 @@
-﻿# PC Remote · Energía: ver o cambiar el plan de energía.
+﻿# SackDesk · Energía: ver o cambiar el plan de energía.
 #   plan.ps1          → plan activo y los disponibles
 #   plan.ps1 <nombre> → activa ese plan
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }

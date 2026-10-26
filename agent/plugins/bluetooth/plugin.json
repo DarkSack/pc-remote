@@ -3,7 +3,7 @@
   "description": "Encender o apagar el Bluetooth del PC y ver los dispositivos emparejados.",
   "icon": "bluetooth",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "estado",

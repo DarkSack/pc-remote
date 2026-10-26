@@ -48,7 +48,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             Icon    = LoadIcon(),
             Visible = true,
-            Text    = "PC Remote — starting…",
+            Text    = "SackDesk — starting…",
         };
 
         RebuildStatus(settings, certificate, connections, devices);
@@ -64,7 +64,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon.ShowBalloonTip(
             3000,
-            "PC Remote",
+            "SackDesk",
             $"Listening on wss://{GetPrimaryIp()}:{settings.WebSocket.Port}",
             ToolTipIcon.Info);
     }
@@ -92,7 +92,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         if (viewers.Count > _screenViewers)
         {
-            _notifyIcon.ShowBalloonTip(5000, "PC Remote — screen shared",
+            _notifyIcon.ShowBalloonTip(5000, "SackDesk — screen shared",
                 $"{string.Join(", ", names)} is watching and can control this PC. Right-click the tray icon to stop it.",
                 ToolTipIcon.Warning);
         }
@@ -112,7 +112,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _devicesItem.Text     = $"Paired devices: {deviceCount}";
         var screen            = cm.ScreenViewers > 0 ? " · SCREEN SHARED" : "";
         // NotifyIcon.Text is capped at 127 characters.
-        var tip               = $"PC Remote · {active} conn · {deviceCount} devices{screen} · cert {shortPrint}…";
+        var tip               = $"SackDesk · {active} conn · {deviceCount} devices{screen} · cert {shortPrint}…";
         _notifyIcon.Text      = tip.Length > 127 ? tip[..127] : tip;
     }
 
@@ -167,7 +167,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             try { Autostart.Set(autostart.Checked); }
             catch (Exception ex)
             {
-                MessageBox.Show($"Could not change it: {ex.Message}", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"Could not change it: {ex.Message}", "SackDesk", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 autostart.Checked = Autostart.IsEnabled();
             }
         };
@@ -178,7 +178,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             var logsPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PcRemote", "logs");
+                "SackDesk", "logs");
             if (!Directory.Exists(logsPath)) Directory.CreateDirectory(logsPath);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
@@ -202,7 +202,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             MessageBox.Show(
                 "No devices paired yet. Open the mobile app and follow the pairing flow.",
-                "PC Remote — devices",
+                "SackDesk — devices",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
@@ -218,19 +218,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var body = string.Join("\n\n", lines);
         body += "\n\nCopy the ID of the device you want to revoke and press OK to enter it.";
 
-        var result = MessageBox.Show(body, "PC Remote — devices", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+        var result = MessageBox.Show(body, "SackDesk — devices", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
         if (result != DialogResult.OK) return;
 
         var idToRevoke = Microsoft.VisualBasic.Interaction.InputBox(
             "Device ID to revoke (leave empty to cancel):",
-            "PC Remote — revoke device",
+            "SackDesk — revoke device",
             "");
 
         if (string.IsNullOrWhiteSpace(idToRevoke)) return;
         var d = devices.Get(idToRevoke.Trim());
         if (d is null)
         {
-            MessageBox.Show("No device with that ID.", "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("No device with that ID.", "SackDesk", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         // Revoke also closes the device's live connection; before, the row was
@@ -242,13 +242,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Could not revoke '{d.Name}': {ex.Message}", "PC Remote",
+            MessageBox.Show($"Could not revoke '{d.Name}': {ex.Message}", "SackDesk",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
         MessageBox.Show(
             $"Revoked '{d.Name}'. Closed {closed} live connection(s).",
-            "PC Remote", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            "SackDesk", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void Post(Action a) => _uiCtx.Post(_ => a(), null);

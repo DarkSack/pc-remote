@@ -37,16 +37,16 @@ public sealed class WebSocketSettings
 
 public sealed class DiscoverySettings
 {
-    public string MdnsServiceType { get; init; } = "_pcremote._tcp";
+    public string MdnsServiceType { get; init; } = "_sackdesk._tcp";
 }
 
 public sealed class StorageSettings
 {
-    public string DatabasePath    { get; init; } = @"%LOCALAPPDATA%\PcRemote\agent.db";
-    public string CertificatePath { get; init; } = @"%LOCALAPPDATA%\PcRemote\cert.pfx";
+    public string DatabasePath    { get; init; } = @"%LOCALAPPDATA%\SackDesk\agent.db";
+    public string CertificatePath { get; init; } = @"%LOCALAPPDATA%\SackDesk\cert.pfx";
 
     /// <summary>Plugins live in one sub-folder each, with a plugin.json (see docs/PLUGINS.md).</summary>
-    public string PluginsPath     { get; init; } = @"%LOCALAPPDATA%\PcRemote\plugins";
+    public string PluginsPath     { get; init; } = @"%LOCALAPPDATA%\SackDesk\plugins";
 
     public string ResolvedDatabasePath    => Environment.ExpandEnvironmentVariables(DatabasePath);
     public string ResolvedCertificatePath => Environment.ExpandEnvironmentVariables(CertificatePath);

@@ -27,7 +27,7 @@ public interface IOptionalModule
 
 /// <summary>
 /// Persists which optional features and plugins are enabled, in
-/// <c>%LOCALAPPDATA%\PcRemote\features.json</c>. Keys are module domains
+/// <c>%LOCALAPPDATA%\SackDesk\features.json</c>. Keys are module domains
 /// (<c>terminal</c>, <c>files</c>) and plugin ids prefixed with <c>plugin:</c>.
 /// </summary>
 public sealed class FeatureStore

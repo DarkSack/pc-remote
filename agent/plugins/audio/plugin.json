@@ -3,7 +3,7 @@
   "description": "Cambiar entre altavoces, auriculares, HDMI… sin tocar el PC.",
   "icon": "headphones",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "siguiente",

@@ -1,4 +1,4 @@
-﻿# PC Remote · Seguridad de Windows (Microsoft Defender).
+﻿# SackDesk · Seguridad de Windows (Microsoft Defender).
 #   defender.ps1 estado | analisis | firmas | amenazas
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

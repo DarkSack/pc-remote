@@ -173,7 +173,7 @@ fun PluginsScreen(vm: PcSession, back: () -> Unit) {
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text("Se activan en el PC", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                    Text("Abre PC Remote desde la bandeja del PC → «Funciones y plugins». Para añadir plugins, copia su carpeta en:",
+                                    Text("Abre SackDesk desde la bandeja del PC → «Funciones y plugins». Para añadir plugins, copia su carpeta en:",
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                                     c.folder?.let {
                                         SelectionContainer { Text(it, style = MonoStyle, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(top = 4.dp)) }

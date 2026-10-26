@@ -1,4 +1,4 @@
-﻿# PC Remote · Red e internet.
+﻿# SackDesk · Red e internet.
 #   red.ps1 ip | velocidad | puertos | conexiones
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

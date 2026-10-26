@@ -3,7 +3,7 @@
   "description": "Notificación, mensaje en pantalla, leer un texto en voz alta o hacer sonar el PC para encontrarlo.",
   "icon": "notifications",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "notificacion",

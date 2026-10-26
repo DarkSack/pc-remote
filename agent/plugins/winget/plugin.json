@@ -3,7 +3,7 @@
   "description": "Buscar, instalar, actualizar y desinstalar programas con winget. Algunos instaladores piden permiso de administrador en el PC.",
   "icon": "apps",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "actualizables",

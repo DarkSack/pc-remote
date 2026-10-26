@@ -7,7 +7,7 @@ namespace PcRemote.Core.Plugins;
 // ══════════════════════════════════════════════════════════════
 // plugin.json — see docs/PLUGINS.md for the full format.
 //
-// A plugin is a folder under %LOCALAPPDATA%\PcRemote\plugins with a
+// A plugin is a folder under %LOCALAPPDATA%\SackDesk\plugins with a
 // plugin.json. Two kinds:
 //
 //   - Actions (no code): a list of buttons. Each one runs a program with

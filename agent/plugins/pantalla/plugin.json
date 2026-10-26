@@ -3,7 +3,7 @@
   "description": "Apagar el monitor, brillo (portátil y monitores DDC/CI) y modo de proyección.",
   "icon": "desktop_windows",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "apagar-monitor",

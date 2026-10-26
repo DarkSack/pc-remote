@@ -1,4 +1,4 @@
-﻿# PC Remote · Windows Update.
+﻿# SackDesk · Windows Update.
 #   wu.ps1 pendientes | historial | reinicio
 # La API COM de Windows Update deja buscar e ir al historial sin permisos de administrador.
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }

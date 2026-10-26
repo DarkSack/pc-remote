@@ -17,15 +17,16 @@ namespace PcRemote.Agent.Tray;
 internal static class Installer
 {
     /// <summary>The running agent quits when this is set: an install over it or an uninstall.</summary>
-    public const string ExitSignalName = @"Local\PcRemote.Agent.Exit";
+    public const string ExitSignalName = @"Local\SackDesk.Agent.Exit";
 
-    private const string DisplayName = "PC Remote";
-    private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\PcRemote";
+    private const string DisplayName = "SackDesk";
+    private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\SackDesk";
     private static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-    public static string Dir { get; } = Path.Combine(LocalAppData, "Programs", "PcRemote");
-    public static string Exe { get; } = Path.Combine(Dir, "PcRemote.exe");
-    private static string Shortcut => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), DisplayName + ".lnk");
+    public static string Dir { get; } = Path.Combine(LocalAppData, "Programs", "SackDesk");
+    public static string Exe { get; } = Path.Combine(Dir, "SackDesk.exe");
+    private static string StartMenu => Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+    private static string Shortcut => Path.Combine(StartMenu, DisplayName + ".lnk");
 
     /// <summary>
     /// Installs when this is the published exe running from anywhere but the install
@@ -49,7 +50,7 @@ internal static class Installer
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo instalar: {ex.Message}\n\nPC Remote se abre desde donde está.",
+            MessageBox.Show($"No se pudo instalar: {ex.Message}\n\nSackDesk se abre desde donde está.",
                 DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
@@ -61,7 +62,7 @@ internal static class Installer
         var purge = false;
         if (!quiet)
         {
-            if (MessageBox.Show("¿Desinstalar PC Remote de este PC?", DisplayName,
+            if (MessageBox.Show("¿Desinstalar SackDesk de este PC?", DisplayName,
                     MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return 1;
             purge = MessageBox.Show(
                 "¿Borrar también los móviles emparejados y la configuración?\n\n" +
@@ -75,7 +76,7 @@ internal static class Installer
         Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
         if (purge)
         {
-            try { Directory.Delete(Path.Combine(LocalAppData, "PcRemote"), recursive: true); }
+            try { Directory.Delete(Path.Combine(LocalAppData, "SackDesk"), recursive: true); }
             catch (DirectoryNotFoundException) { }
         }
         // A running exe cannot delete itself: cmd waits until this process is gone, then removes the folder.
@@ -106,7 +107,7 @@ internal static class Installer
         catch (AbandonedMutexException) { running.ReleaseMutex(); return; } // it died holding it: free now
 
         var session = Process.GetCurrentProcess().SessionId;
-        foreach (var p in Process.GetProcessesByName("PcRemote"))
+        foreach (var p in Process.GetProcessesByName("SackDesk"))
             using (p)
                 if (p.Id != Environment.ProcessId && p.SessionId == session)
                     try { p.Kill(); p.WaitForExit(5_000); }

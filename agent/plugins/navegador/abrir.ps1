@@ -1,4 +1,4 @@
-﻿# PC Remote · Navegador: abre un enlace o una búsqueda en el navegador predeterminado.
+﻿# SackDesk · Navegador: abre un enlace o una búsqueda en el navegador predeterminado.
 #   abrir.ps1 url <https://…> | google|youtube|ytmusic|maps <texto>
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

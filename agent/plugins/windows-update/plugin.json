@@ -3,7 +3,7 @@
   "description": "Actualizaciones pendientes, las últimas instaladas y buscar nuevas.",
   "icon": "system_update",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "pendientes",

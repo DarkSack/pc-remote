@@ -41,7 +41,7 @@ data class AgentError(
                 )
                 has(PcOfflineException::class.java) -> AgentError(
                     "El PC no está conectado",
-                    "Comprueba que esté encendido, con internet y con PC Remote abierto en la bandeja.", tech,
+                    "Comprueba que esté encendido, con internet y con SackDesk abierto en la bandeja.", tech,
                 )
                 has(UnknownHostException::class.java) -> AgentError(
                     "No se encuentra el PC",
@@ -53,7 +53,7 @@ data class AgentError(
                 )
                 has(ConnectException::class.java) || text.contains("ECONNREFUSED") -> AgentError(
                     "El PC no respondió",
-                    "¿Está encendido y con PC Remote abierto en la bandeja?", tech,
+                    "¿Está encendido y con SackDesk abierto en la bandeja?", tech,
                 )
                 has(SocketTimeoutException::class.java) || text.contains("ETIMEDOUT") -> AgentError(
                     "Tiempo de espera agotado",

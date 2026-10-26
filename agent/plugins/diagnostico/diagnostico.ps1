@@ -1,4 +1,4 @@
-﻿# PC Remote · Diagnóstico.
+﻿# SackDesk · Diagnóstico.
 #   diagnostico.ps1 encendido | reinicios | errores | inicio | temperaturas
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

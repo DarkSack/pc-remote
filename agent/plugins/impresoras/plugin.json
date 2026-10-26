@@ -3,7 +3,7 @@
   "description": "Cola de impresión, cancelar trabajos atascados y página de prueba.",
   "icon": "print",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "cola",

@@ -10,7 +10,7 @@ class QrPayloadTest {
     private val fp = "07f50eab62227c5c1d6e6f1c7f05d1701d1782362f259676c6e8f8cc3afd3ac2"
 
     /** Exactly what PanelEndpoints builds: prefix + camelCase JSON, not URL-encoded. */
-    private fun qr(json: String) = "pcremote://pair?$json"
+    private fun qr(json: String) = "sackdesk://pair?$json"
 
     @Test fun `parses the payload the agent panel generates`() {
         val p = QrPayload.parse(qr("""{"v":1,"host":"192.168.1.50","port":47820,"code":"042917","fp":"$fp","name":"PC-SACKITO"}"""))
@@ -33,7 +33,7 @@ class QrPayloadTest {
     @Test fun `rejects other QRs and malformed payloads`() {
         val bad = listOf(
             "https://example.com",
-            "pcremote://pair?not-json",
+            "sackdesk://pair?not-json",
             qr("""{"v":2,"host":"pc","port":47820,"code":"123456","fp":"$fp"}"""),       // unknown version
             qr("""{"v":1,"host":"","port":47820,"code":"123456","fp":"$fp"}"""),         // no host
             qr("""{"v":1,"host":"pc","port":70000,"code":"123456","fp":"$fp"}"""),       // bad port

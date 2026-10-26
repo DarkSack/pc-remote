@@ -11,7 +11,7 @@ namespace PcRemote.Agent.Tray;
 internal static class Autostart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "PC Remote";
+    private const string ValueName = "SackDesk";
 
     private static string Command(string? exe = null) => $"\"{exe ?? Environment.ProcessPath}\"";
 

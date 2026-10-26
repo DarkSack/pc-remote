@@ -1,4 +1,4 @@
-﻿# PC Remote · Salida de audio.
+﻿# SackDesk · Salida de audio.
 #   audio.ps1 listar
 #   audio.ps1 siguiente
 #   audio.ps1 elegir <n>

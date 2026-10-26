@@ -1,4 +1,4 @@
-﻿# PC Remote · Pantalla: apaga los monitores (SC_MONITORPOWER).
+﻿# SackDesk · Pantalla: apaga los monitores (SC_MONITORPOWER).
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)

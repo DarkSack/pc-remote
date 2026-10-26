@@ -3,7 +3,7 @@
   "description": "Temporales, papelera y descargas viejas: ver cuánto ocupan y liberar espacio.",
   "icon": "cleaning",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     {
       "id": "resumen",

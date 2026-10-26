@@ -9,7 +9,7 @@ namespace PcRemote.Core.Discovery;
 
 /// <summary>
 /// Publishes the agent as an mDNS service so mobile clients can auto-discover it.
-/// Service type: _pcremote._tcp
+/// Service type: _sackdesk._tcp
 /// TXT records: hostname, os, version, fp (SHA-256 of the TLS certificate).
 ///
 /// Two things this gets right that "new ServiceProfile(...)" alone does not:

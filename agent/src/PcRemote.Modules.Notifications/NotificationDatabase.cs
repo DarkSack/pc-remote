@@ -41,7 +41,7 @@ internal static class NotificationDatabase
     /// <param name="lastId">Highest Id read, counting toasts without text, so they are not read again.</param>
     private static List<PcNotification> Query(string path, string whereAndOrder, int limit, long afterId, out long lastId)
     {
-        if (!File.Exists(path)) throw new FileNotFoundException("Este Windows no guarda las notificaciones donde PC Remote las busca.", path);
+        if (!File.Exists(path)) throw new FileNotFoundException("Este Windows no guarda las notificaciones donde SackDesk las busca.", path);
 
         var cs = new SqliteConnectionStringBuilder
         {

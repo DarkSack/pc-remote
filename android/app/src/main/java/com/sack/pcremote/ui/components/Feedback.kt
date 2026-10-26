@@ -32,7 +32,7 @@ fun rememberHaptics(): Haptics {
 /** Plain-text clipboard of the phone (the system one, synchronous and not deprecated). */
 class TextClipboard(private val context: android.content.Context) {
     private val cm = context.getSystemService(android.content.ClipboardManager::class.java)
-    fun copy(text: String, label: String = "PC Remote") = cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+    fun copy(text: String, label: String = "SackDesk") = cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
     fun paste(): String? = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
 }
 

@@ -3,7 +3,7 @@
   "description": "Abrir Steam (Big Picture, biblioteca, descargas), Epic Games y la configuración de juego de Windows.",
   "icon": "games",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     { "id": "steam-big-picture", "label": "Steam Big Picture",  "icon": "games",    "open": "steam://open/bigpicture" },
     { "id": "steam-biblioteca",  "label": "Biblioteca de Steam", "icon": "games",   "open": "steam://open/games" },

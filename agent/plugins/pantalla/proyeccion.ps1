@@ -1,4 +1,4 @@
-﻿# PC Remote · Pantalla: modo de proyección (Win+P).
+﻿# SackDesk · Pantalla: modo de proyección (Win+P).
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)

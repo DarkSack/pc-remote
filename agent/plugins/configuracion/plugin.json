@@ -3,7 +3,7 @@
   "description": "Abre en el PC la página de Configuración o la herramienta que necesites.",
   "icon": "settings",
   "version": "1.0.0",
-  "author": "PC Remote",
+  "author": "SackDesk",
   "actions": [
     { "id": "pantalla",       "label": "Pantalla",                    "icon": "desktop_windows", "open": "ms-settings:display" },
     { "id": "sonido",         "label": "Sonido",                      "icon": "volume",          "open": "ms-settings:sound" },

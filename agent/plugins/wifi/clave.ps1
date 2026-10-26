@@ -1,4 +1,4 @@
-﻿# PC Remote · Wi-Fi: contraseña de una red guardada.
+﻿# SackDesk · Wi-Fi: contraseña de una red guardada.
 # netsh la muestra con "key=clear" para las redes del usuario, sin permisos de administrador.
 trap { Write-Output "Error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = 'Stop'

@@ -1,4 +1,4 @@
-﻿# PC Remote · Pantalla: lee o cambia el brillo.
+﻿# SackDesk · Pantalla: lee o cambia el brillo.
 #   brillo.ps1        → muestra el brillo de cada pantalla
 #   brillo.ps1 <0-100> → lo cambia
 # Pantalla de portátil: WMI. Monitores externos: DDC/CI (el monitor tiene que tenerlo activado).

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 // ══════════════════════════════════════════════════════════════
 // Contenido del QR que genera el panel web del agente:
 //
-//   pcremote://pair?{"v":1,"host":"192.168.1.50","port":47820,
+//   sackdesk://pair?{"v":1,"host":"192.168.1.50","port":47820,
 //                    "code":"123456","fp":"<sha256 hex>","name":"PC"}
 //
 // El JSON va tal cual detrás del "?" (el agente no lo codifica como
@@ -25,10 +25,10 @@ data class QrPayload(
     val name: String = "PC",
 ) {
     companion object {
-        private const val PREFIX = "pcremote://pair?"
+        private const val PREFIX = "sackdesk://pair?"
         private val json = Json { ignoreUnknownKeys = true }
 
-        /** Null when the text is not a PC Remote pairing QR, or is malformed. */
+        /** Null when the text is not a SackDesk pairing QR, or is malformed. */
         fun parse(raw: String): QrPayload? {
             val text = raw.trim()
             if (!text.startsWith(PREFIX)) return null

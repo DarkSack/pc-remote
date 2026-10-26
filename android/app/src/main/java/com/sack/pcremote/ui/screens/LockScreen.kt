@@ -29,7 +29,7 @@ fun LockScreen(onUnlocked: () -> Unit) {
     fun prompt() {
         error = null
         val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Desbloquear PC Remote")
+            .setTitle("Desbloquear SackDesk")
             .setSubtitle("Confirma que eres tú")
             // Device credential as fallback, so a phone without fingerprint still works.
             .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
@@ -54,7 +54,7 @@ fun LockScreen(onUnlocked: () -> Unit) {
         ) {
             Icon(painterResource(R.drawable.ic_logo_mark), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(72.dp))
             Spacer(Modifier.height(24.dp))
-            Text("PC Remote está bloqueado", style = MaterialTheme.typography.titleLarge)
+            Text("SackDesk está bloqueado", style = MaterialTheme.typography.titleLarge)
             error?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)

@@ -194,7 +194,7 @@ public static class PanelEndpoints
                 fp   = CertificateProvider.GetFingerprint(cert),
                 name = Environment.MachineName,
             };
-            var qrData = "pcremote://pair?" + JsonSerializer.Serialize(payload, Json);
+            var qrData = "sackdesk://pair?" + JsonSerializer.Serialize(payload, Json);
 
             return Results.Json(new
             {
