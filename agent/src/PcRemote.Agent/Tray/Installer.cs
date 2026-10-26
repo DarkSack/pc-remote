@@ -6,8 +6,8 @@ using Microsoft.Win32;
 namespace PcRemote.Agent.Tray;
 
 /// <summary>
-/// The downloaded PcRemote.exe installs itself on first run, per user and without
-/// admin (like VS Code's user setup): a copy in %LOCALAPPDATA%\Programs\PcRemote,
+/// The downloaded SackDesk.exe installs itself on first run, per user and without
+/// admin (like VS Code's user setup): a copy in %LOCALAPPDATA%\Programs\SackDesk,
 /// a Start menu entry, start with Windows, and an entry in Settings › Apps that
 /// runs <c>--uninstall</c>. Running a newer download over it is the update.
 /// The firewall is left to Windows, which asks the first time the agent listens;

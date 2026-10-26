@@ -1,6 +1,6 @@
 # Plugins
 
-Hay dos formas de añadir cosas a PC Remote sin tocar el código del agente:
+Hay dos formas de añadir cosas a SackDesk sin tocar el código del agente:
 
 1. **Funciones opcionales** que ya trae el agente (Terminal, Archivos, Pantalla
    remota, Notificaciones). Se
@@ -53,7 +53,7 @@ instaladores que lo pidan por su cuenta, con winget).
 | `red` | IP pública, test de velocidad, traceroute, DNS, puertos en escucha, programas conectados a internet |
 | `limpieza` | Cuánto se puede liberar, borrar temporales, vaciar la papelera, descargas antiguas, Liberador de espacio |
 | `discos` | Espacio libre, salud (SMART según Windows), carpetas más pesadas, archivos más grandes |
-| `captura` | Captura de pantalla a `Imágenes\PC Remote` (se baja desde Archivos) |
+| `captura` | Captura de pantalla a `Imágenes\SackDesk` (se baja desde Archivos) |
 | `windows-update` | Actualizaciones pendientes, últimas instaladas, si hace falta reiniciar, buscar ahora |
 | `winget` | Apps con actualización, actualizar todas o una, buscar, instalar, desinstalar |
 | `navegador` | Abrir un enlace o buscar en Google, YouTube, YouTube Music o Maps |
@@ -65,7 +65,7 @@ instaladores que lo pidan por su cuenta, con winget).
 | `impresoras` | Cola de impresión, cancelar trabajos, página de prueba |
 | `configuracion` | Accesos directos a páginas de Configuración y herramientas (Servicios, Visor de eventos…) |
 | `juegos` | Steam (Big Picture, biblioteca, descargas, amigos, cerrar), Epic, modo de juego |
-| `notas` | Apuntar notas desde el móvil en `Documentos\PC Remote\notas.txt` |
+| `notas` | Apuntar notas desde el móvil en `Documentos\SackDesk\notas.txt` |
 | `buscar-archivos` | Buscar por nombre (índice de Windows Search), últimas descargas, abiertos recientemente |
 | `utilidades-windows` | El ejemplo original: ipconfig, DNS, ping, papelera, Descargas, Administrador de tareas |
 

@@ -140,7 +140,7 @@ fun DevicesScreen(
                     EmptyState(
                         Icons.Outlined.Computer,
                         "Todavía no hay ningún PC",
-                        "Abre PcRemote.exe en tu PC; se abrirá su panel con un QR. Escanéalo con el botón de abajo.",
+                        "Abre SackDesk en tu PC; se abrirá su panel con un QR. Escanéalo con el botón de abajo.",
                         actionLabel = "Escanear QR",
                         onAction = ::scanQr,
                     )

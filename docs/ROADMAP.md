@@ -96,7 +96,7 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
       Windows, Configuración › Aplicaciones para desinstalar, actualizar encima.
       El firewall lo pregunta Windows; si se bloquea, entra el relay.
 - [ ] Firmar el exe (sin firma, SmartScreen avisa al descargarlo).
-- [ ] Nombre nuevo (ya existe «PC Remote» de Monect en Play), ficha, política de
-      privacidad, seguridad de datos y capturas.
+- [x] Nombre nuevo: SackDesk (ya existía «PC Remote» de Monect en Play).
+- [ ] Ficha de Play, política de privacidad, seguridad de datos y capturas.
 - [ ] Repositorio privado antes de vender: ahora es público y el canal `interna`
       trae Pro.
