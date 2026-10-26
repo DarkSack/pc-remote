@@ -6,16 +6,17 @@ TLS. Diseño y límites: [`docs/PROTOCOL.md`](../../docs/PROTOCOL.md#relay-cuand
 
 ## 1 · DNS (Cloudflare, una vez)
 
-16 registros **A** a la IP del VPS, **sin proxy (nube gris)**: Caddy pide los
-certificados por HTTP-01 y con la nube naranja el desafío no llega.
+Un registro **A** comodín a la IP del VPS, **sin proxy (nube gris)**: Caddy pide
+los certificados por HTTP-01 y con la nube naranja el desafío no llega.
 
 ```
-r0.relay.sackito.online … r9.relay.sackito.online, ra.relay … rf.relay  →  144.126.155.36
+Tipo A · Nombre *.relay · Contenido 144.126.155.36 · Proxy desactivado
 ```
 
-Son 16 nombres, uno por primer dígito del id del PC: si algún día un servidor no
-basta, se mueven unos cuantos a otro VPS cambiando solo su registro, sin
-actualizar ninguna app.
+Cubre los 16 nombres `r0.relay.sackito.online` … `rf.relay.sackito.online`, uno
+por primer dígito del id del PC. Si algún día un servidor no basta, se crea un
+registro concreto (por ejemplo `r8.relay`) hacia otro VPS, que gana al comodín,
+sin actualizar ninguna app.
 
 ## 2 · Caddy
 
