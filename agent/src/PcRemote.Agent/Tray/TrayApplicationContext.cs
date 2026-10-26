@@ -189,12 +189,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(openLogs);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) =>
-        {
-            _notifyIcon.Visible = false;
-            _onExit();
-            ExitThread();
-        });
+        menu.Items.Add("Exit", null, (_, _) => Quit());
 
         return menu;
     }
@@ -257,6 +252,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private void Post(Action a) => _uiCtx.Post(_ => a(), null);
+
+    /// <summary>The menu's Exit, callable from any thread (the installer asks through an event).</summary>
+    public void Quit() => Post(() =>
+    {
+        _notifyIcon.Visible = false;
+        _onExit();
+        ExitThread();
+    });
 
     /// <summary>The brand icon embedded in the exe, at the tray's size (16 px at 100 %, more with DPI scaling).</summary>
     private static Icon LoadIcon()

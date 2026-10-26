@@ -24,12 +24,16 @@ namespace PcRemote.Agent;
 internal static class Program
 {
     /// <summary>Per user: two agents of the same user would fight over the port.</summary>
-    private const string SingleInstanceMutex = @"Local\PcRemote.Agent";
+    internal const string SingleInstanceMutex = @"Local\PcRemote.Agent";
 
     [STAThread]
     private static int Main()
     {
         ApplicationConfiguration.Initialize();
+
+        var args = Environment.GetCommandLineArgs();
+        if (args.Contains("--uninstall")) return Installer.Uninstall(quiet: args.Contains("--quiet"));
+        if (Installer.InstallIfNeeded()) return 0;
 
         using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutex, out var firstInstance);
         var configuration = BuildConfiguration();
@@ -74,6 +78,10 @@ internal static class Program
                 try { Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult(); }
                 catch { /* best effort */ }
             });
+
+            // Installing a new version over this one, or uninstalling, asks it to quit cleanly.
+            using var exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Installer.ExitSignalName);
+            ThreadPool.RegisterWaitForSingleObject(exitSignal, (_, _) => tray.Quit(), null, Timeout.Infinite, executeOnlyOnce: true);
 
             Application.Run(tray);
             return 0;

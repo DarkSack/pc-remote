@@ -79,10 +79,14 @@ pc-remote/
 powershell -ExecutionPolicy Bypass -File agent/publish.ps1
 ```
 
-y copia `dist\PcRemote.exe` (~70 MB) a donde quieras. Doble clic y aparece en la
-bandeja; la primera vez se abre el panel con el QR para emparejar. Abrirlo otra
-vez con el agente ya en marcha solo abre el panel. «Iniciar con Windows» está en
-el menú de la bandeja. Si quieres cambiar la configuración, pon un
+y reparte `dist\PcRemote.exe` (~70 MB). Doble clic y **se instala solo**, para tu
+usuario y sin pedir admin: queda en `%LOCALAPPDATA%\Programs\PcRemote`, en el menú
+Inicio, arranca con Windows (se quita en el menú de la bandeja) y aparece en
+Configuración › Aplicaciones para desinstalarlo. Abrir una versión nueva la
+actualiza: cierra la anterior y conserva los móviles emparejados. La primera vez
+se abre el panel con el QR para emparejar; abrirlo otra vez con el agente ya en
+marcha solo abre el panel. Desinstalar sin preguntas (winget):
+`PcRemote.exe --uninstall --quiet`. Si quieres cambiar la configuración, pon un
 `appsettings.json` junto al exe o en `%LOCALAPPDATA%\PcRemote\`.
 
 **Para desarrollar** (SDK de .NET 10, Windows 10 2004 o posterior):
@@ -105,7 +109,8 @@ Puertos por defecto (en `appsettings.json`):
 | 47820 | `wss://…/ws`, protocolo del móvil | LAN |
 | 47810 | Panel web | solo `localhost` |
 
-Windows pedirá permiso de firewall para el 47820 la primera vez.
+Windows pedirá permiso de firewall para el 47820 la primera vez. Si se deniega, o un antivirus
+bloquea la conexión, el móvil entra por el relay (ver `docs/PROTOCOL.md`).
 
 Tests del agente (no necesitan el agente arrancado; uno lee la lista real de apps de este Windows):
 

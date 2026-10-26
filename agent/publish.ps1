@@ -1,6 +1,6 @@
 # Builds the agent as ONE self-contained executable: dist\PcRemote.exe.
-# The PC that runs it needs nothing installed (no .NET); double-click and it
-# sits in the tray. Run from any folder:
+# The PC that runs it needs nothing installed (no .NET): double-click and it
+# installs itself for the user (Tray/Installer.cs) and sits in the tray. Run from any folder:
 #
 #   powershell -ExecutionPolicy Bypass -File agent\publish.ps1
 #
