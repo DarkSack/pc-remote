@@ -39,6 +39,10 @@ data class AgentError(
                     "El PC presenta un certificado diferente al emparejado. Si reinstalaste el agente, vuelve a emparejar.",
                     tech, permanent = true, otherCertificate = true,
                 )
+                has(PcOfflineException::class.java) -> AgentError(
+                    "El PC no está conectado",
+                    "Comprueba que esté encendido, con internet y con PC Remote abierto en la bandeja.", tech,
+                )
                 has(UnknownHostException::class.java) -> AgentError(
                     "No se encuentra el PC",
                     "La dirección guardada ya no existe en esta red.", tech,

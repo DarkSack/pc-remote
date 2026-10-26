@@ -54,3 +54,6 @@ local.properties
 *.jks
 *.keystore
 captures/
+
+# Relay publicado para la imagen de Docker (deploy/relay/publicar.ps1)
+deploy/relay/app/

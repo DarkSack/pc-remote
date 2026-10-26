@@ -307,6 +307,7 @@ async function refreshStatus() {
       <div class="row"><span class="k">Usuario</span><span class="v">${esc(s.username)}</span></div>
       <div class="row"><span class="k">IP en la red</span><span class="v">${esc(s.lanIp)}</span></div>
       <div class="row"><span class="k">Puerto</span><span class="v">${esc(s.wsPort)} (wss)</span></div>
+      <div class="row"><span class="k">Desde otras redes</span><span class="v">${esc({ online: "Disponible", connecting: "Conectando…", off: "Desactivado" }[s.relay] ?? s.relay)}</span></div>
       <div class="row"><span class="k">Agente activo</span><span class="v">${esc(fmtUptime(s.uptimeSec))}</span></div>
       <div class="row"><span class="k">Huella del certificado</span><span class="v mono" style="font-size:10px">${esc(s.certFingerprint)}</span></div>
     `;

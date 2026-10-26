@@ -57,6 +57,7 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
     val error by vm.error.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
     val stats by vm.stats.collectAsStateWithLifecycle()
+    val relayed by vm.relayed.collectAsStateWithLifecycle()
     val latency by vm.latency.collectAsStateWithLifecycle()
     val since by vm.connectedSince.collectAsStateWithLifecycle()
     val creds by vm.creds.collectAsStateWithLifecycle()
@@ -121,7 +122,7 @@ fun HomeScreen(vm: PcSession, open: (String) -> Unit, onSwitchPc: () -> Unit) {
                     state = state,
                     name = info?.hostname ?: creds?.agentName ?: "PC",
                     os = info?.os,
-                    address = creds?.let { it.agentHost } ?: "",
+                    address = creds?.let { if (relayed) "${it.agentHost} · por internet" else it.agentHost } ?: "",
                     latencyMs = latency,
                     connectedSince = since,
                     lastSync = stats?.ts?.takeIf { it > 0 },

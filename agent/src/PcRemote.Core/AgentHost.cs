@@ -90,6 +90,8 @@ public static class AgentHost
         builder.Services.AddSingleton<WebSocketServer>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<WebSocketServer>());
         builder.Services.AddHostedService<MdnsPublisher>();
+        builder.Services.AddSingleton<RelayConnector>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<RelayConnector>());
 
         extraServices?.Invoke(new HostBuilderContext(new Dictionary<object, object>())
         {

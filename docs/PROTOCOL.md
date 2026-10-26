@@ -107,6 +107,34 @@ recorta a 64 caracteres y se le quitan los caracteres de control.
 | `PAIRING_FAILED` | Código incorrecto o caducado. |
 | `FEATURE_DISABLED` | La función opcional o el plugin está desactivado en el panel del PC (ver [PLUGINS.md](PLUGINS.md)). También al suscribirse. |
 
+## Relay: cuando el móvil no llega al PC
+
+Un antivirus con cortafuegos propio, dos routers o estar en otra red impiden que
+el móvil abra la conexión directa. Entonces los dos salen hacia el relay
+(`agent/src/PcRemote.Relay`, en el VPS detrás de Caddy) y este copia bytes entre
+ellos. **Dentro va el mismo protocolo, con el mismo TLS fijado a la huella del
+PC**: el relay no ve nada en claro, no tiene cuentas ni claves y no guarda lo
+que pasa.
+
+| Quién | Petición | Qué pasa |
+|---|---|---|
+| PC | `wss://…/agent` | El relay manda `{t:"challenge", nonce}` (base64, 32 bytes). El PC responde `{t:"hello", cert, sig}`: su certificado (DER, base64) y la firma RSA-SHA256 PKCS#1 de `"pcremote-relay:" + nonce`. El relay contesta `{t:"ready", id}` con id = SHA-256 del certificado (la huella que fija el móvil) o cierra con 4401. Un segundo login del mismo PC cierra el anterior con 4003. |
+| Móvil | `wss://…/connect/{id}` | Si el PC no está: 404. Si sí, el relay manda al PC `{t:"open", token, ip}` y espera 10 s a que el PC abra `wss://…/accept/{token}`; si no llega, 504. Después el upgrade del móvil se completa y los dos sockets quedan unidos. |
+| PC | `wss://…/accept/{token}` | Token de un solo uso. El PC pone TLS de servidor con su certificado sobre ese socket, lee el upgrade HTTP del móvil (`/ws` o `/socket/{nombre}`) y lo atiende con los mismos manejadores que una conexión directa. |
+
+Dirección: `wss://r{s}.relay.sackito.online`, donde `{s}` es el primer dígito
+hexadecimal del id del PC. PC y móvil la calculan igual (`RelayAddress` y
+`Relay.urlFor`), así que un grupo de PCs puede pasar a otro servidor cambiando
+solo el DNS, sin actualizar ninguna app.
+
+Límites (variables `RELAY_*`, ver `RelayServer.FromEnvironment`): 60 túneles y
+10 logins de PC por minuto e IP, 8 túneles a la vez por PC, 20 000 túneles y
+200 000 PCs por servidor (más allá: 503), ~24 Mbit/s por túnel y sentido con
+ráfagas de 1 MB. El móvil usa primero el camino que funcionó la última vez y,
+si un intento falla antes de autenticar, prueba el otro al momento. Conectado
+por el relay, al cambiar de red o volver a la app comprueba si ya alcanza el PC
+directo y se pasa a ese camino.
+
 ---
 
 ## Comandos por dominio

@@ -10,6 +10,15 @@ public sealed class AgentSettings
     public SessionSettings   Session   { get; init; } = new();
     public PanelSettings     Panel     { get; init; } = new();
     public ClipboardSettings Clipboard { get; init; } = new();
+    public RelaySettings     Relay     { get; init; } = new();
+}
+
+public sealed class RelaySettings
+{
+    /// <summary>Off: phones reach this PC only when they can connect to it directly.</summary>
+    public bool   Enabled { get; init; } = true;
+    /// <summary>The relay; <c>{s}</c> = first hex digit of this PC's id (see RelayAddress).</summary>
+    public string Url     { get; init; } = "wss://r{s}.relay.sackito.online";
 }
 
 public sealed class PanelSettings

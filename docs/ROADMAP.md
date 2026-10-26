@@ -76,8 +76,25 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
       móvil real; avisos con la app cerrada (servicio en segundo plano).
 - Macros y presets ("modo juego").
 
-## Fase 7 · Acceso por Internet (mucho después)
+## Fase 7 · Acceso por Internet
 
-- STUN/TURN para atravesar NAT; relay opcional.
-- Rotación de tokens, lista de IPs permitidas.
-- Nunca sin TLS + pinning ni sin doble factor.
+- [x] Relay propio (`agent/src/PcRemote.Relay`): PC y móvil solo hacen conexiones de
+      salida, así que funciona con cualquier antivirus, router o red. TLS de punta a
+      punta fijado a la huella del PC; el relay no ve nada. Ver PROTOCOL.md.
+- [x] Probado en local de punta a punta (emparejar, autenticar, ping) y con carga en
+      Linux: 4500 túneles a la vez, 0 fallos, ~1,5 Gbit/s, ~365 MB de RAM.
+- [ ] Desplegarlo en el VPS (`deploy/relay`) y probarlo con un móvil real.
+- Más adelante, si el ancho de banda del VPS se queda corto: conexión directa por
+  NAT (STUN) antes del relay, o más servidores por DNS (`r{s}`).
+
+## Fase 8 · Comercial (Google Play)
+
+- [x] Pro: compra única por Google Play (canal `play`); el APK de `dist/` (canal
+      `interna`) la trae activa.
+- [x] Relay para que cualquiera conecte, tenga el antivirus o la red que tenga.
+- [ ] Instalador del agente para Windows (regla del firewall, inicio con Windows,
+      desinstalar) y firmarlo (sin firma, SmartScreen avisa).
+- [ ] Nombre nuevo (ya existe «PC Remote» de Monect en Play), ficha, política de
+      privacidad, seguridad de datos y capturas.
+- [ ] Repositorio privado antes de vender: ahora es público y el canal `interna`
+      trae Pro.

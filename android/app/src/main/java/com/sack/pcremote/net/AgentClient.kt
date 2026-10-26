@@ -2,6 +2,7 @@ package com.sack.pcremote.net
 
 import android.util.Log
 import com.sack.pcremote.data.AgentCredentials
+import com.sack.pcremote.BuildConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,12 @@ import javax.net.ssl.X509TrustManager
 //   - Al volver, retryNow() salta la espera del backoff (hasta 30 s).
 //   - updateAddress(): si el PC cambió de IP, la sesión lo busca por mDNS
 //     y reconecta a la nueva dirección.
+//   - Dos caminos: directo (la red local) y el relay (Relay.kt), para cuando
+//     un antivirus, otro router u otra red no dejan llegar al PC. Si un intento
+//     falla antes de autenticar se prueba al momento el otro camino; si fallan
+//     los dos, espera (backoff) y vuelve a empezar por el último que funcionó.
+//     Conectado por el relay, al cambiar de red o volver a la app se comprueba si
+//     el PC ya se alcanza directo y se pasa a ese camino (más rápido, sin coste).
 //   - Un único OkHttpClient para todas las reconexiones (antes se creaba
 //     uno por intento y se apagaba su dispatcher justo después).
 // ══════════════════════════════════════════════════════════════
@@ -104,6 +111,29 @@ class AgentClient(initial: AgentCredentials) {
 
     private val http: OkHttpClient by lazy { buildOkHttp { creds.certFingerprintHex } }
 
+    /** Same pinned TLS, carried by the relay instead of a TCP socket. */
+    private val relayHttp: OkHttpClient by lazy {
+        http.newBuilder()
+            .socketFactory(RelaySocketFactory(Relay.urlFor(creds.certFingerprintHex)))
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private val relayEnabled = BuildConfig.RELAY_URL.isNotEmpty()
+
+    /** Path of the next attempt: the last one that worked, flipped after a failed attempt. */
+    @Volatile private var viaRelay = false
+
+    /** This round already tried the other path; the next failure waits (backoff). */
+    private var triedOtherPath = false
+
+    /** Path of the socket that is open (or opening) now: module sockets must take the same one. */
+    @Volatile private var liveViaRelay = false
+
+    /** Connected through the relay (shown in the app). */
+    private val _relayed = MutableStateFlow(false)
+    val relayed: StateFlow<Boolean> = _relayed.asStateFlow()
+
     @Synchronized
     fun connect() {
         // Only from a resting state: calling it while connecting, authenticating or
@@ -145,11 +175,31 @@ class AgentClient(initial: AgentCredentials) {
                 if (!ping(3000)) {
                     Log.i(TAG, "No pong after a network change; reconnecting")
                     forceReconnect(AgentError.Unresponsive)
-                }
+                } else preferDirect()
             }
-            ConnectionState.RECONNECTING -> retryNow()
+            ConnectionState.RECONNECTING -> {
+                // New network: the PC may be reachable directly now.
+                viaRelay = false
+                triedOtherPath = false
+                retryNow()
+            }
             else -> {}
         }
+    }
+
+    /** Connected through the relay but the PC answers directly (back home): move to the direct path. */
+    private suspend fun preferDirect() {
+        if (!liveViaRelay || _state.value != ConnectionState.CONNECTED) return
+        val reachable = withContext(Dispatchers.IO) {
+            runCatching {
+                java.net.Socket().use { it.connect(java.net.InetSocketAddress(creds.agentHost, creds.agentPort), 1500) }
+            }.isSuccess
+        }
+        if (!reachable) return
+        Log.i(TAG, "PC reachable directly again; leaving the relay")
+        viaRelay = false
+        triedOtherPath = false
+        forceReconnect(AgentError("Cambiando a conexión directa", "El PC ya se alcanza en tu red. Reconectando…", "relay → directo"))
     }
 
     /**
@@ -162,7 +212,7 @@ class AgentClient(initial: AgentCredentials) {
                 if (!ping(3000)) {
                     Log.i(TAG, "No pong after resume; reconnecting")
                     forceReconnect(AgentError.Unresponsive)
-                }
+                } else preferDirect()
             }
             ConnectionState.RECONNECTING -> retryNow()
             ConnectionState.DISCONNECTED -> connect()
@@ -230,7 +280,9 @@ class AgentClient(initial: AgentCredentials) {
                 fail(AgentError("Dirección no válida", "La dirección guardada (${creds.agentHost}) no es válida.", it.message, permanent = true))
                 return
             }
-        ws = http.newWebSocket(req, listener)
+        val relay = viaRelay && relayEnabled
+        liveViaRelay = relay
+        ws = (if (relay) relayHttp else http).newWebSocket(req, listener)
     }
 
     @Synchronized
@@ -269,17 +321,30 @@ class AgentClient(initial: AgentCredentials) {
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (webSocket !== ws) return
-            Log.w(TAG, "WS failure: ${t.message}")
+            Log.w(TAG, "WS failure (${if (liveViaRelay) "relay" else "direct"}): ${t.message}")
             failAllPending(t)
             if (isTerminal()) return
             val err = AgentError.from(t)
-            // A certificate that does not match the pinned one will not start
-            // matching on the next attempt: stop and tell the user.
-            if (err.permanent) { fail(err); return }
+            val wasConnected = _state.value == ConnectionState.CONNECTED
+            // Another certificate at the saved address is another PC that took our PC's
+            // old IP: the relay finds ours by its fingerprint. Through the relay itself a
+            // mismatch cannot happen by accident, so there (or without a relay) it is final.
+            val wrongPcHere = err.otherCertificate && !liveViaRelay && relayEnabled
+            if (err.permanent && !wrongPcHere) { fail(err); return }
             _error.value = err
             _connectedSince.value = null
+            _relayed.value = false
             _failures.value += 1
-            scheduleReconnect()
+            if (!wasConnected && relayEnabled && !triedOtherPath) {
+                // Never got in on this path: try the other one right away.
+                triedOtherPath = true
+                viaRelay = !liveViaRelay
+                Log.i(TAG, if (viaRelay) "Trying the relay" else "Trying a direct connection")
+                scheduleReconnect(immediate = true)
+            } else {
+                triedOtherPath = false
+                scheduleReconnect()
+            }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -287,6 +352,7 @@ class AgentClient(initial: AgentCredentials) {
             Log.i(TAG, "WS closed $code $reason")
             failAllPending(RuntimeException("closed: $reason"))
             _connectedSince.value = null
+            _relayed.value = false
             if (!isTerminal()) {
                 _error.value = AgentError("Conexión cerrada", "El PC cerró la conexión. Reconectando…", "close $code $reason")
                 _failures.value += 1
@@ -312,6 +378,10 @@ class AgentClient(initial: AgentCredentials) {
                 val ok = root["success"]?.jsonPrimitive?.boolean == true
                 if (ok) {
                     backoffIndex = 0
+                    triedOtherPath = false
+                    viaRelay = liveViaRelay
+                    _relayed.value = liveViaRelay
+                    if (liveViaRelay) Log.i(TAG, "Connected through the relay")
                     _failures.value = 0
                     _error.value = null
                     _connectedSince.value = System.currentTimeMillis()
@@ -466,7 +536,7 @@ class AgentClient(initial: AgentCredentials) {
     fun openModuleSocket(path: String, listener: WebSocketListener): WebSocket? {
         val url = agentWsUrl(creds.agentHost, creds.agentPort).removeSuffix("/ws") + path
         val req = runCatching { Request.Builder().url(url).build() }.getOrNull() ?: return null
-        return http.newWebSocket(req, listener)
+        return (if (liveViaRelay) relayHttp else http).newWebSocket(req, listener)
     }
 
     // ── Helpers ─────────────────────────────────────────
@@ -538,11 +608,17 @@ class PairingClient(
         onPhase?.invoke(phase, info)
     }
 
+    /** Pairing by QR went through the relay (the PC could not be reached directly). */
+    private var viaRelay = false
+
     fun start(onPhase: (PairPhase, String?) -> Unit) {
         this.onPhase = onPhase
         onPhase(PairPhase.CONNECTING, null)
         keys = Crypto.generateKeypair()
+        open()
+    }
 
+    private fun open() {
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
@@ -558,21 +634,30 @@ class PairingClient(
         val client = OkHttpClient.Builder()
             .sslSocketFactory(sslCtx.socketFactory, trustAll[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
+            .apply { if (viaRelay) socketFactory(RelaySocketFactory(Relay.urlFor(expectedFingerprint!!))).connectTimeout(15, TimeUnit.SECONDS) }
             .build()
         val req = runCatching { Request.Builder().url(agentWsUrl(host, port)).build() }
-            .getOrElse { onPhase(PairPhase.ERROR, "Dirección no válida: $host"); return }
+            .getOrElse { finish(PairPhase.ERROR, "Dirección no válida: $host"); return }
 
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (expectedFingerprint == null) webSocket.send(json.encodeToString(PairInitMsg()))
-                else onPhase(PairPhase.WAITING_CODE, null)
+                else onPhase?.invoke(PairPhase.WAITING_CODE, null)
             }
             override fun onMessage(webSocket: WebSocket, text: String) = handle(text)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val mismatch = generateSequence(t) { it.cause }.any { it is CertificateMismatchException }
+                // The QR names the PC by its certificate: if its address does not answer (antivirus,
+                // another network) or another PC answers there, try the relay once before giving up.
+                if (!finished && !viaRelay && expectedFingerprint != null && BuildConfig.RELAY_URL.isNotEmpty()) {
+                    Log.i("PairingClient", "Direct pairing failed (${t.message}); trying the relay")
+                    viaRelay = true
+                    open()
+                    return
+                }
                 finish(PairPhase.ERROR,
                     if (mismatch) "El PC de esa dirección no tiene el certificado del QR. Genera un QR nuevo en el panel y vuelve a escanearlo."
-                    else t.message)
+                    else AgentError.from(t).message)
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(1000, null)

@@ -146,6 +146,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginCatalog>());
         builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginsModule>());
         builder.Services.AddSingleton(_activity);
+        builder.Services.AddSingleton(_services.GetRequiredService<RelayConnector>());
 
         _app = builder.Build();
 
@@ -226,13 +227,35 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             return;
         }
 
-        var socket   = await ctx.WebSockets.AcceptWebSocketAsync();
-        var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var socket = await ctx.WebSockets.AcceptWebSocketAsync();
+        await RunProtocolAsync(socket, ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown", ctx.RequestAborted);
+    }
+
+    /// <summary>
+    /// What a phone that came through the relay gets for <paramref name="path"/>: the same
+    /// handlers as a direct connection (same auth, pairing and limits), another transport.
+    /// Null for a path the agent does not serve.
+    /// </summary>
+    public Func<WebSocket, string, CancellationToken, Task>? RelayedHandler(string path)
+    {
+        if (path == "/ws") return RunProtocolAsync;
+        if (!path.StartsWith("/socket/", StringComparison.Ordinal)) return null;
+        var name = path["/socket/".Length..];
+        var module = FindSocketModule(name);
+        return module is null ? null : (socket, ip, ct) => RunModuleSocketAsync(module, name, socket, ip, ct);
+    }
+
+    private ISocketModule? FindSocketModule(string name) =>
+        _router.Modules.Values.OfType<ISocketModule>()
+            .FirstOrDefault(m => string.Equals(m.SocketName, name, StringComparison.OrdinalIgnoreCase));
+
+    private async Task RunProtocolAsync(WebSocket socket, string clientIp, CancellationToken aborted)
+    {
         var tracked  = _connections.Register(socket, clientIp);
         var conn     = new Connection(tracked);
         _logger.LogInformation("Client connected from {Ip} (id={Id})", clientIp, tracked.Id);
 
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, tracked.Closing);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(aborted, tracked.Closing);
         _ = CloseIfNotAuthenticatedAsync(conn, lifetime.Token);
         try
         {
@@ -283,8 +306,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
     private async Task HandleModuleSocket(HttpContext ctx)
     {
         var name = ctx.Request.RouteValues["name"] as string ?? "";
-        var module = _router.Modules.Values.OfType<ISocketModule>()
-            .FirstOrDefault(m => string.Equals(m.SocketName, name, StringComparison.OrdinalIgnoreCase));
+        var module = FindSocketModule(name);
 
         if (ctx.Connection.LocalPort != _settings.WebSocket.Port || module is null)
         {
@@ -297,10 +319,14 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
             return;
         }
 
-        var socket   = await ctx.WebSockets.AcceptWebSocketAsync();
-        var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var socket = await ctx.WebSockets.AcceptWebSocketAsync();
+        await RunModuleSocketAsync(module, name, socket, ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown", ctx.RequestAborted);
+    }
+
+    private async Task RunModuleSocketAsync(ISocketModule module, string name, WebSocket socket, string clientIp, CancellationToken aborted)
+    {
         var tracked  = _connections.Register(socket, clientIp, module.SocketName);
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, tracked.Closing);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(aborted, tracked.Closing);
         try
         {
             var hello = await ReadTicketAsync(tracked, lifetime.Token);

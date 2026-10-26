@@ -74,6 +74,8 @@ class PcSession(app: Application, val deviceId: String) : AndroidViewModel(app) 
     val error: StateFlow<AgentError?> = client?.error ?: MutableStateFlow(null)
     val latency: StateFlow<Long?> = client?.latency ?: MutableStateFlow(null)
     val connectedSince: StateFlow<Long?> = client?.connectedSince ?: MutableStateFlow(null)
+    /** Connected through the relay instead of directly. */
+    val relayed: StateFlow<Boolean> = client?.relayed ?: MutableStateFlow(false)
 
     private val _info = MutableStateFlow<SystemInfo?>(null)
     val info: StateFlow<SystemInfo?> = _info.asStateFlow()

@@ -1,0 +1,29 @@
+# Relay de PC Remote en el VPS, detrás de Caddy (que pone el TLS). Ver README.md.
+services:
+  relay:
+    build: .
+    image: pcremote-relay
+    container_name: pcremote-relay
+    restart: unless-stopped
+    # Solo Caddy, en el mismo host, llega al relay: por eso el relay se fía de X-Forwarded-For.
+    ports:
+      - "127.0.0.1:${RELAY_PORT:-47900}:8080"
+    # Miles de túneles = miles de sockets, y miles de PCs reconectando a la vez tras un reinicio.
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    sysctls:
+      net.core.somaxconn: 8192
+    environment:
+      RELAY_MAX_TUNNELS: ${RELAY_MAX_TUNNELS:-20000}
+      RELAY_MAX_AGENTS: ${RELAY_MAX_AGENTS:-200000}
+      RELAY_TUNNEL_BYTES_PER_SECOND: ${RELAY_TUNNEL_BYTES_PER_SECOND:-3000000}
+    # Tope de memoria: con 20 000 túneles usa ~1,7 GB; el VPS lo comparte con Minecraft.
+    mem_limit: 3g
+    # Una línea por minuto con la carga; sin límite el log crecería sin fin.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

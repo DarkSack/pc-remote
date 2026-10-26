@@ -117,7 +117,7 @@ public static class PanelEndpoints
             await ServeHtml(ctx);
         });
 
-        app.MapGet("/api/status", (HttpContext ctx, AgentSettings s, X509Certificate2 cert) =>
+        app.MapGet("/api/status", (HttpContext ctx, AgentSettings s, X509Certificate2 cert, RelayConnector relay) =>
         {
             if (!Match(ctx)) return Results.NotFound();
             return Results.Json(new
@@ -129,6 +129,7 @@ public static class PanelEndpoints
                 wsBindAddress  = s.WebSocket.BindAddress,
                 mdnsService    = s.Discovery.MdnsServiceType,
                 certFingerprint = CertificateProvider.GetFingerprint(cert),
+                relay          = !s.Relay.Enabled ? "off" : relay.Online ? "online" : "connecting",
                 pairing        = new
                 {
                     codeTtlSec    = s.Pairing.CodeTtlSeconds,

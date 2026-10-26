@@ -38,6 +38,9 @@ android {
         targetSdk = 36
         versionCode = 5
         versionName = "0.5.0"
+        // Relay for PCs the phone cannot reach directly; {s} = first hex digit of the PC's id
+        // (same rule as the agent's Relay:Url). Empty turns the relay off.
+        buildConfigField("String", "RELAY_URL", "\"wss://r{s}.relay.sackito.online\"")
     }
 
     signingConfigs {
@@ -142,4 +145,6 @@ dependencies {
 
     // JVM unit tests for logic that does not need a device (QR parsing, WoL packets).
     testImplementation("junit:junit:4.13.2")
+    // RelaySocket against a WebSocket server standing in for the relay.
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
 }
