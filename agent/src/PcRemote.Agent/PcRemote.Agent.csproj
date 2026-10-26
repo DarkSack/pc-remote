@@ -9,7 +9,6 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Assets\pcremote.ico</ApplicationIcon>
     <Product>PC Remote</Product>
-    <Version>0.5.0</Version>
   </PropertyGroup>
 
   <!-- One-file build: `./publish.ps1` (or dotnet publish -p:PublishProfile=SingleExe).

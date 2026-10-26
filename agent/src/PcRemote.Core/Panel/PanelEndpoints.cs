@@ -136,7 +136,7 @@ public static class PanelEndpoints
                     maxAttempts   = s.Pairing.MaxAttempts,
                     lockoutSec    = s.Pairing.LockoutSeconds,
                 },
-                uptimeSec      = (int)(Environment.TickCount64 / 1000),
+                uptimeSec      = (int)(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalSeconds,
                 version        = GetVersion(),
             }, Json);
         });

@@ -36,8 +36,8 @@ android {
         applicationId = "com.sack.pcremote"
         minSdk = 26          // Android 8.0
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
         // Relay for PCs the phone cannot reach directly; {s} = first hex digit of the PC's id
         // (same rule as the agent's Relay:Url). Empty turns the relay off.
         buildConfigField("String", "RELAY_URL", "\"wss://r{s}.relay.sackito.online\"")
