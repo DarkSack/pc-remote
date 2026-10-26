@@ -145,6 +145,7 @@ public sealed class WebSocketServer : IHostedService, IAsyncDisposable
         builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.FeatureStore>());
         builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginCatalog>());
         builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginsModule>());
+        builder.Services.AddSingleton(_services.GetRequiredService<PcRemote.Core.Plugins.PluginStore>());
         builder.Services.AddSingleton(_activity);
         builder.Services.AddSingleton(_services.GetRequiredService<RelayConnector>());
 

@@ -1,0 +1,58 @@
+{
+  "name": "Escritorios virtuales",
+  "description": "Crear, cambiar y cerrar escritorios virtuales de Windows desde el móvil, como con Win+Ctrl+flechas.",
+  "icon": "desktop_windows",
+  "version": "1.0.0",
+  "author": "SackDesk",
+  "actions": [
+    {
+      "id": "siguiente",
+      "label": "Escritorio siguiente",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorios.ps1", "siguiente"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "anterior",
+      "label": "Escritorio anterior",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorios.ps1", "anterior"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "nuevo",
+      "label": "Escritorio nuevo",
+      "description": "Lo crea y te lleva a él.",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorios.ps1", "nuevo"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "vista",
+      "label": "Vista de tareas",
+      "description": "Todas las ventanas y escritorios (Win+Tab).",
+      "icon": "apps",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorios.ps1", "vista"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "cerrar",
+      "label": "Cerrar este escritorio",
+      "description": "Sus ventanas pasan al escritorio de al lado.",
+      "icon": "desktop_windows",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "escritorios.ps1", "cerrar"],
+      "confirm": "¿Cerrar el escritorio virtual en el que estás?",
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

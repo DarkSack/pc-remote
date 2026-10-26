@@ -95,7 +95,12 @@ Parámetros exactos en [`PROTOCOL.md`](PROTOCOL.md).
 - [x] El exe se instala solo (por usuario, sin admin): menú Inicio, inicio con
       Windows, Configuración › Aplicaciones para desinstalar, actualizar encima.
       El firewall lo pregunta Windows; si se bloquea, entra el relay.
-- [ ] Firmar el exe (sin firma, SmartScreen avisa al descargarlo).
+- [ ] Firmar el exe. Sin firmar por ahora, por decisión de Sack (2026-10-25):
+      Azure Artifact Signing solo acepta particulares de EE. UU. y Canadá, un
+      certificado OV cuesta cada año y tampoco quita el aviso de SmartScreen de
+      entrada; la Microsoft Store firmaría gratis si algún día se empaqueta.
+- [x] Tienda de plugins en el panel (0.7.0): catálogo curado y firmado en el
+      VPS, plugins gratis, instalar/actualizar/desinstalar (docs/PLUGINS.md).
 - [x] Nombre nuevo: SackDesk (ya existía «PC Remote» de Monect en Play).
 - [ ] Ficha de Play, política de privacidad, seguridad de datos y capturas.
 - [ ] Repositorio privado antes de vender: ahora es público y el canal `interna`

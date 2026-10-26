@@ -11,6 +11,13 @@ public sealed class AgentSettings
     public PanelSettings     Panel     { get; init; } = new();
     public ClipboardSettings Clipboard { get; init; } = new();
     public RelaySettings     Relay     { get; init; } = new();
+    public PluginStoreSettings PluginStore { get; init; } = new();
+}
+
+public sealed class PluginStoreSettings
+{
+    /// <summary>Signed catalog of the plugin store (catalogo.sig next to it; zips beside it).</summary>
+    public string Url { get; init; } = "https://mc.sackito.online/descargas/plugins/catalogo.json";
 }
 
 public sealed class RelaySettings

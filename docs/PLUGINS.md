@@ -90,6 +90,49 @@ que el panel o el móvil piden la lista: para añadir o cambiar un plugin de
 acciones basta con guardar el archivo. Los errores del manifiesto se ven en el
 panel y en la app, y un plugin con errores no se puede ejecutar.
 
+## Tienda de plugins
+
+El panel tiene una sección **Tienda de plugins** con plugins gratis que publica
+Sack (curados, nadie más publica). Se instalan, actualizan y desinstalan desde
+ahí, y llegan **desactivados**, como cualquier otro. Al actualizar se respeta si
+estaba activado.
+
+| Plugin | Qué hace |
+|---|---|
+| `docker` | Contenedores en marcha y todos, CPU y memoria, arrancar/parar/reiniciar uno, abrir Docker Desktop |
+| `escritorios` | Escritorios virtuales: siguiente, anterior, nuevo, cerrar y vista de tareas |
+
+Nada de la tienda se instala sin comprobarlo:
+
+- El catálogo (`https://mc.sackito.online/descargas/plugins/catalogo.json`) va
+  firmado con Ed25519 (`catalogo.sig` al lado). El agente lleva dentro la clave
+  pública (`PluginStore.StoreKey`) y rechaza cualquier catálogo que no esté
+  firmado con la privada, aunque alguien tome el VPS.
+- Cada zip tiene que coincidir con el SHA-256 que da el catálogo firmado. Se
+  extrae sin dejar salir archivos de su carpeta y con topes de tamaño (20 MB
+  descargado, 50 MB descomprimido).
+- Solo plugins **de acciones**, sin errores y con el mismo id que el catálogo.
+  Los de módulo (.dll) no pasan: se quedan cargados y bloqueados hasta reiniciar.
+- La tienda solo reemplaza o borra carpetas que instaló ella y que no se han
+  tocado desde entonces (`plugins\.tienda.json`). Si ya tienes un plugin con ese
+  id, o editaste el de la tienda, no se actualiza: el panel lo indica.
+
+### Publicar en la tienda
+
+1. El plugin va en `agent/plugins-tienda/<id>/`, con `"version"` en su
+   `plugin.json` (súbela en cada cambio) y los `.ps1` en UTF-8 con BOM. El test
+   `The_store_plugins_in_the_repository_are_valid` los valida.
+2. `node deploy/plugins/publicar.mjs` genera en `dist/tienda-plugins/` los zips,
+   `catalogo.json` y `catalogo.sig`. Con `--subir` además lo copia al VPS
+   (primero los zips y al final el catálogo).
+
+La clave privada está en `%USERPROFILE%\.sackdesk\tienda-plugins.key`, **fuera
+del repositorio**. Si no existe, el script crea una nueva e imprime la pública,
+que habría que poner en `PluginStore.StoreKey` y sacar una versión nueva del
+agente: los agentes ya instalados solo aceptan la clave vieja. **Guarda una
+copia de esa clave**: sin ella no se puede publicar nada para los agentes que ya
+existen.
+
 ## Plugin de acciones
 
 ```json

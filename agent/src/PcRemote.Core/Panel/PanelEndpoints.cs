@@ -41,6 +41,9 @@ namespace PcRemote.Core.Panel;
 //   GET  /api/plugins   → funciones opcionales y plugins instalados
 //   POST /api/features/:key?enabled=bool → activa/desactiva (terminal, files, plugin:<id>)
 //   POST /api/plugins/open-folder → abre la carpeta de plugins en el Explorador
+//   GET  /api/store?refresh=bool → catálogo firmado de la tienda y qué hay instalado
+//   POST /api/store/:id/install  → instala o actualiza (llega desactivado)
+//   DELETE /api/store/:id        → desinstala un plugin que vino de la tienda
 //   GET  /favicon.svg
 // ══════════════════════════════════════════════════════════════
 public static class PanelEndpoints
@@ -265,6 +268,38 @@ public static class PanelEndpoints
                 UseShellExecute = true,
             })?.Dispose();
             return Results.Ok(new { folder = catalog.Root });
+        });
+
+        // The panel only talks to this origin (CSP): the agent downloads, the browser never does.
+        app.MapGet("/api/store", async (HttpContext ctx, PluginStore store, bool? refresh, CancellationToken ct) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            try { return Results.Json(await store.DescribeAsync(refresh == true, ct), Json); }
+            catch (StoreException ex) { return Results.Json(new { error = ex.Message }, Json, statusCode: 502); }
+        });
+
+        app.MapPost("/api/store/{id}/install", async (HttpContext ctx, string id, PluginStore store, ActivityLog activity, CancellationToken ct) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            try
+            {
+                var (entry, updated) = await store.InstallAsync(id, ct);
+                activity.Add("plugin", $"{entry.Name} {(updated ? "actualizado" : "instalado")} desde la tienda", "v" + entry.Version, "success");
+                return Results.Ok(new { id, version = entry.Version, updated });
+            }
+            catch (StoreException ex) { return Results.Json(new { error = ex.Message }, Json, statusCode: 409); }
+        });
+
+        app.MapDelete("/api/store/{id}", (HttpContext ctx, string id, PluginStore store, ActivityLog activity) =>
+        {
+            if (!Match(ctx)) return Results.NotFound();
+            try
+            {
+                var name = store.Uninstall(id);
+                activity.Add("plugin", $"{name} desinstalado", null, "info");
+                return Results.Ok(new { id });
+            }
+            catch (StoreException ex) { return Results.Json(new { error = ex.Message }, Json, statusCode: 409); }
         });
 
         app.MapGet("/api/logs", (HttpContext ctx, int? limit) =>

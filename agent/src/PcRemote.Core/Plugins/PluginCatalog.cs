@@ -51,29 +51,33 @@ public sealed class PluginCatalog
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var dir in System.IO.Directory.GetDirectories(Root).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
         {
-            var file = Path.Combine(dir, "plugin.json");
-            if (!File.Exists(file)) continue;
-
-            var folderId = PluginIds.FromFolder(Path.GetFileName(dir));
-            PluginManifest manifest;
-            try
-            {
-                manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(file), ReadOptions) ?? new PluginManifest();
-            }
-            catch (Exception ex)
-            {
-                result.Add(new LoadedPlugin(folderId, dir, new PluginManifest { Name = Path.GetFileName(dir) },
-                    new[] { $"plugin.json no es JSON válido: {ex.Message}" }));
-                continue;
-            }
-
-            var id = string.IsNullOrWhiteSpace(manifest.Id) ? folderId : manifest.Id.Trim().ToLowerInvariant();
-            var errors = Validate(manifest, id, dir);
-            if (!seen.Add(id)) errors.Add($"Hay otro plugin con el id '{id}'.");
-            manifest.Name = string.IsNullOrWhiteSpace(manifest.Name) ? Path.GetFileName(dir) : manifest.Name.Trim();
-            result.Add(new LoadedPlugin(id, dir, manifest, errors));
+            if (!File.Exists(Path.Combine(dir, "plugin.json"))) continue;
+            var plugin = Read(dir);
+            if (!seen.Add(plugin.Id)) plugin = plugin with { Errors = [.. plugin.Errors, $"Hay otro plugin con el id '{plugin.Id}'."] };
+            result.Add(plugin);
         }
         return result;
+    }
+
+    /// <summary>One plugin folder: its plugin.json, read and validated (the folder must have one).</summary>
+    internal static LoadedPlugin Read(string dir)
+    {
+        var folderId = PluginIds.FromFolder(Path.GetFileName(dir));
+        PluginManifest manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(Path.Combine(dir, "plugin.json")), ReadOptions) ?? new PluginManifest();
+        }
+        catch (Exception ex)
+        {
+            return new LoadedPlugin(folderId, dir, new PluginManifest { Name = Path.GetFileName(dir) },
+                new[] { $"plugin.json no es JSON válido: {ex.Message}" });
+        }
+
+        var id = string.IsNullOrWhiteSpace(manifest.Id) ? folderId : manifest.Id.Trim().ToLowerInvariant();
+        var errors = Validate(manifest, id, dir);
+        manifest.Name = string.IsNullOrWhiteSpace(manifest.Name) ? Path.GetFileName(dir) : manifest.Name.Trim();
+        return new LoadedPlugin(id, dir, manifest, errors);
     }
 
     public LoadedPlugin? Find(string id) =>
@@ -230,12 +234,15 @@ public sealed class PluginCatalog
     /// The folder holds exactly the files we wrote, unchanged. Editing, adding or removing
     /// any file makes it the owner's.
     /// </summary>
-    private static bool IsUntouched(string dir, string recorded)
+    internal static bool IsUntouched(string dir, string recorded) =>
+        string.Equals(HashOfFolder(dir), recorded, StringComparison.Ordinal);
+
+    internal static string HashOfFolder(string dir)
     {
         var files = System.IO.Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
             .ToList();
-        return string.Equals(BundledPlugin.HashOf(files, p => File.ReadAllBytes(Path.Combine(dir, p))), recorded, StringComparison.Ordinal);
+        return BundledPlugin.HashOf(files, p => File.ReadAllBytes(Path.Combine(dir, p)));
     }
 
     private static void Write(string dir, BundledPlugin plugin)
@@ -248,7 +255,7 @@ public sealed class PluginCatalog
         }
     }
 
-    private static bool IsNewer(string? candidate, string? installed) =>
+    internal static bool IsNewer(string? candidate, string? installed) =>
         Version.TryParse(candidate, out var c) && (!Version.TryParse(installed, out var i) || c > i);
 
     private const string Readme = """

@@ -1,0 +1,90 @@
+{
+  "name": "Docker",
+  "description": "Ver tus contenedores, arrancarlos, pararlos o reiniciarlos y cuánto consumen, sin sentarte al PC.",
+  "icon": "storage",
+  "version": "1.0.0",
+  "author": "SackDesk",
+  "actions": [
+    {
+      "id": "en-marcha",
+      "label": "Contenedores en marcha",
+      "icon": "storage",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "enmarcha"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "todos",
+      "label": "Todos los contenedores",
+      "description": "También los parados.",
+      "icon": "storage",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "todos"],
+      "output": true,
+      "encoding": "utf8"
+    },
+    {
+      "id": "recursos",
+      "label": "CPU y memoria",
+      "description": "Lo que gasta cada contenedor en marcha ahora mismo.",
+      "icon": "troubleshoot",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "recursos"],
+      "output": true,
+      "timeoutSec": 60,
+      "encoding": "utf8"
+    },
+    {
+      "id": "arrancar",
+      "label": "Arrancar un contenedor",
+      "icon": "play_arrow",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "arrancar", "{nombre}"],
+      "params": [
+        { "id": "nombre", "label": "Nombre del contenedor", "type": "string", "pattern": "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", "placeholder": "mi-servidor" }
+      ],
+      "output": true,
+      "timeoutSec": 120,
+      "encoding": "utf8"
+    },
+    {
+      "id": "parar",
+      "label": "Parar un contenedor",
+      "icon": "stop",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "parar", "{nombre}"],
+      "params": [
+        { "id": "nombre", "label": "Nombre del contenedor", "type": "string", "pattern": "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", "placeholder": "mi-servidor" }
+      ],
+      "confirm": "¿Parar el contenedor {nombre}?",
+      "output": true,
+      "timeoutSec": 120,
+      "encoding": "utf8"
+    },
+    {
+      "id": "reiniciar",
+      "label": "Reiniciar un contenedor",
+      "icon": "refresh",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "reiniciar", "{nombre}"],
+      "params": [
+        { "id": "nombre", "label": "Nombre del contenedor", "type": "string", "pattern": "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", "placeholder": "mi-servidor" }
+      ],
+      "confirm": "¿Reiniciar el contenedor {nombre}?",
+      "output": true,
+      "timeoutSec": 120,
+      "encoding": "utf8"
+    },
+    {
+      "id": "abrir",
+      "label": "Abrir Docker Desktop",
+      "description": "Lo arranca si está cerrado.",
+      "icon": "apps",
+      "run": "powershell.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "docker.ps1", "abrir"],
+      "output": true,
+      "encoding": "utf8"
+    }
+  ]
+}

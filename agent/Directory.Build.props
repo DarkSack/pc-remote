@@ -7,7 +7,7 @@
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <LangVersion>latest</LangVersion>
     <!-- Una sola versión para el exe y sus librerías: el panel la lee de Core. -->
-    <Version>0.6.1</Version>
+    <Version>0.7.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>

@@ -75,6 +75,7 @@ public static class AgentHost
         builder.Services.AddSingleton<ActivityLog>();
         builder.Services.AddSingleton<FeatureStore>();
         builder.Services.AddSingleton<PluginCatalog>();
+        builder.Services.AddSingleton<PluginStore>();
         builder.Services.AddSingleton<PluginsModule>();
         builder.Services.AddSingleton<ICommandModule>(sp => sp.GetRequiredService<PluginsModule>());
         builder.Services.AddSingleton<ICommandModule, ActivityModule>();

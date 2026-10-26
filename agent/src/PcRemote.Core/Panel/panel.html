@@ -222,6 +222,16 @@
     <div id="plugins-body"></div>
   </section>
 
+  <!-- Tienda de plugins -->
+  <section class="card wide" id="store-card">
+    <div class="flex-between">
+      <h2 style="margin:0">Tienda de plugins</h2>
+      <button class="ghost small" onclick="refreshStore(true)">Recargar</button>
+    </div>
+    <p class="sub" style="margin-top:0">Plugins gratis de SackDesk. Se comprueban antes de instalarlos y llegan desactivados: actívalos arriba.</p>
+    <div id="store-body"><div class="empty">Cargando…</div></div>
+  </section>
+
   <!-- Dispositivos emparejados -->
   <section class="card wide">
     <div class="flex-between">
@@ -269,7 +279,10 @@ const $ = (id) => document.getElementById(id);
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `${path}: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -456,6 +469,61 @@ async function openPluginsFolder() {
   catch (e) { alert("No se pudo abrir la carpeta: " + e.message); }
 }
 
+// ── Tienda de plugins ───────────────────────────────────
+const STORE_STATE = {
+  available: "",
+  installed: "instalado",
+  update: "actualización disponible",
+  edited: "lo cambiaste: no se actualiza solo",
+  conflict: "ya tienes otro plugin con este id",
+};
+
+async function refreshStore(refresh) {
+  try {
+    const d = await api("/api/store" + (refresh ? "?refresh=true" : ""));
+    $("store-body").innerHTML = d.plugins.length === 0
+      ? '<div class="empty">La tienda todavía no tiene plugins.</div>'
+      : d.plugins.map(p => {
+          const mine = p.state !== "available" && p.state !== "conflict";
+          const main = p.state === "available" ? "Instalar" : p.state === "update" ? "Actualizar" : null;
+          return `
+        <div class="plugin">
+          <div class="icon" aria-hidden="true">${esc(ICONS[p.icon] ?? (p.name || "?").slice(0, 1).toUpperCase())}</div>
+          <div class="body">
+            <h3>${esc(p.name)} ${STORE_STATE[p.state] ? `<span class="chip">${esc(STORE_STATE[p.state])}</span>` : ""}</h3>
+            ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ""}
+            <div class="meta">v${esc(p.version)}${p.installedVersion && p.installedVersion !== p.version ? ` (tienes v${esc(p.installedVersion)})` : ""}${p.author ? " · " + esc(p.author) : ""} · ${esc((p.bytes / 1024).toFixed(0))} KB</div>
+            ${p.changes ? `<div class="meta">${esc(p.changes)}</div>` : ""}
+          </div>
+          <div class="actions" style="margin-top:6px">
+            ${main ? `<button class="small" data-store="install" data-id="${esc(p.id)}" data-name="${esc(p.name)}">${main}</button>` : ""}
+            ${mine ? `<button class="danger small" data-store="uninstall" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Desinstalar</button>` : ""}
+          </div>
+        </div>`;
+        }).join("");
+  } catch (e) {
+    $("store-body").innerHTML = `<div class="empty">No se pudo cargar la tienda: ${esc(e.message)}</div>`;
+  }
+}
+
+$("store-card").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-store]");
+  if (!btn) return;
+  const { store: op, id, name } = btn.dataset;
+  if (op === "uninstall" && !confirm(`¿Desinstalar «${name}»? Se borra su carpeta, con cualquier cambio que le hayas hecho.`)) return;
+  btn.disabled = true;
+  btn.textContent = op === "install" ? "Instalando…" : "Quitando…";
+  try {
+    await api(op === "install" ? `/api/store/${encodeURIComponent(id)}/install` : `/api/store/${encodeURIComponent(id)}`,
+      { method: op === "install" ? "POST" : "DELETE" });
+  } catch (e) {
+    alert(e.message);
+  }
+  refreshStore();
+  refreshPlugins();
+  refreshActivity();
+});
+
 // ── Actividad ───────────────────────────────────────────
 async function refreshActivity() {
   try {
@@ -558,6 +626,7 @@ refreshStatus();
 refreshDevices();
 refreshConns();
 refreshPlugins();
+refreshStore();
 refreshActivity();
 refreshLogs();
 refreshAudit();

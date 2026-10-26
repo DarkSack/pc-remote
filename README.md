@@ -19,7 +19,7 @@ Comunicación por `wss://` en la LAN con certificado autofirmado y *pinning*, de
 
 | Parte | Hecho | Pendiente |
 |---|---|---|
-| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU, con sonido y monitores en vertical), `notifications` (las de Windows, desactivado por defecto), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins; **un solo `SackDesk.exe`** | Probar en un monitor en vertical de verdad |
+| Agente | Módulos `system`, `systeminfo` (CPU/GPU/temperaturas/discos/red), `input`, `clipboard` (+ historial con imágenes), `media`, `windows`, `processes`, `applications`, `network`, `files`, `terminal`, `screen` (pantalla remota, H.264 por la GPU, con sonido y monitores en vertical), `notifications` (las de Windows, desactivado por defecto), `activity`, `plugins`; emparejamiento, revocación, panel web con QR, funciones opcionales y plugins, **tienda de plugins** (catálogo firmado); **un solo `SackDesk.exe`** | Probar en un monitor en vertical de verdad |
 | Android | Rediseño «Personal Command Center» (Material 3, tema oscuro y claro), Inicio con estado y métricas, Control, **Pantalla remota** (modo ratón y táctil, zoom, teclado, varias pantallas), Apps, Actividad, Ajustes, Monitor, Procesos, Red, Terminal, Archivos, Portapapeles, Notificaciones de Windows, Plugins; reconexión fiable al volver a la app; bloqueo con huella; Wake-on-LAN. Probada en un móvil real hasta la 0.4 | Probar en un móvil real la pantalla remota (0.5), su sonido y las notificaciones |
 
 Detalle por fases en [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -51,6 +51,7 @@ pc-remote/
 │   ├── Directory.Build.props             # target común (net10.0-windows10.0.19041.0)
 │   ├── global.json
 │   ├── plugins/                          # 23 plugins incluidos (se copian desactivados a la carpeta de plugins)
+│   ├── plugins-tienda/                   # plugins de la tienda (se publican con deploy/plugins/publicar.mjs)
 │   ├── src/
 │   │   ├── PcRemote.Agent/               # bandeja (WinForms) + arranque + appsettings.json
 │   │   ├── PcRemote.Core/                # WebSocket, emparejamiento, sesiones, router, panel web, mDNS, SQLite, plugins, actividad
